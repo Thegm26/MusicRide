@@ -39,8 +39,8 @@ namespace MusicRoad
             strength = Mathf.MoveTowards(strength, targetStrength, Time.deltaTime * responseSpeed);
 
             int activeCount = Mathf.RoundToInt(strength * PoolSize);
-            Vector3 windDirection = (-car.forward + Vector3.down * 0.08f).normalized;
-            Quaternion windRotation = Quaternion.LookRotation(windDirection, Vector3.up);
+            Vector3 windDirection = (-car.forward - car.up * 0.08f).normalized;
+            Quaternion windRotation = Quaternion.LookRotation(windDirection, car.up);
             float speed = Mathf.Lerp(30f, 76f, strength);
 
             for (int i = 0; i < PoolSize; i++)
@@ -94,7 +94,7 @@ namespace MusicRoad
                 car.position +
                 car.forward * Random.Range(15f, 55f) +
                 car.right * Random.Range(-14f, 14f) +
-                Vector3.up * Random.Range(0.3f, 10f),
+                car.up * Random.Range(0.3f, 10f),
                 rotation);
             streak.localScale = new Vector3(width, width, length);
         }

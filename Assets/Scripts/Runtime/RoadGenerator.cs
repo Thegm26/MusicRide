@@ -19,9 +19,10 @@ namespace MusicRoad
         private Material edgeMaterial;
 
         private Vector3 cursor = Vector3.zero;
-        private float yaw;
+        private Quaternion frame = Quaternion.identity;
         private float yawRate;
-        private float slope;
+        private float pitchRate;
+        private float rollRate;
         private int sequence;
         private readonly float seed = 18.247f;
 
@@ -64,32 +65,24 @@ namespace MusicRoad
             }
         }
 
-        public bool TryGetRoadInfo(Vector3 worldPosition, out Vector3 point, out Vector3 tangent, out float lateralDistance)
-        {
-            bool found = TryGetClosestRoadPose(worldPosition, out point, out tangent, out float bestSqr);
-            if (!found)
-            {
-                lateralDistance = float.MaxValue;
-                return false;
-            }
-
-            Vector3 planarOffset = Vector3.ProjectOnPlane(worldPosition - point, Vector3.up);
-            lateralDistance = planarOffset.magnitude;
-            return bestSqr < 55f * 55f;
-        }
-
-        public bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent)
-        {
-            return TryGetClosestRoadPose(worldPosition, out point, out tangent, out _);
-        }
-
-        public bool TryGetPointAhead(Vector3 worldPosition, float distance, out Vector3 point, out Vector3 tangent)
+        public bool TryGetRoadInfo(
+            Vector3 worldPosition,
+            out Vector3 point,
+            out Vector3 tangent,
+            out Vector3 roadUp,
+            out Vector3 roadRight,
+            out float lateralDistance,
+            out float normalDistance)
         {
             point = Vector3.zero;
             tangent = Vector3.forward;
-            int closestChunk = -1;
-            int closestSample = -1;
+            roadUp = Vector3.up;
+            roadRight = Vector3.right;
+            lateralDistance = float.MaxValue;
+            normalDistance = 0f;
             float bestSqr = float.MaxValue;
+            RoadChunk closestChunk = null;
+            int closestSample = -1;
 
             for (int chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
             {
@@ -100,81 +93,40 @@ namespace MusicRoad
                     if (sqr < bestSqr)
                     {
                         bestSqr = sqr;
-                        closestChunk = chunkIndex;
+                        closestChunk = chunk;
                         closestSample = sampleIndex;
                     }
                 }
             }
 
-            if (closestChunk < 0)
+            if (closestChunk == null)
             {
                 return false;
             }
 
-            float remaining = Mathf.Max(0f, distance);
-            Vector3 cursorPoint = chunks[closestChunk].samples[closestSample];
-            for (int chunkIndex = closestChunk; chunkIndex < chunks.Count; chunkIndex++)
+            point = closestChunk.samples[closestSample];
+            roadUp = closestChunk.ups[closestSample].normalized;
+            if (closestSample < closestChunk.samples.Count - 1)
             {
-                List<Vector3> samples = chunks[chunkIndex].samples;
-                int startSample = chunkIndex == closestChunk ? closestSample + 1 : 1;
-                for (int sampleIndex = startSample; sampleIndex < samples.Count; sampleIndex++)
-                {
-                    Vector3 nextPoint = samples[sampleIndex];
-                    Vector3 segment = nextPoint - cursorPoint;
-                    float segmentLength = segment.magnitude;
-                    if (remaining <= segmentLength)
-                    {
-                        tangent = segment.normalized;
-                        point = Vector3.Lerp(cursorPoint, nextPoint, remaining / Mathf.Max(0.001f, segmentLength));
-                        return true;
-                    }
-
-                    remaining -= segmentLength;
-                    cursorPoint = nextPoint;
-                }
+                tangent = (closestChunk.samples[closestSample + 1] - point).normalized;
+            }
+            else if (closestSample > 0)
+            {
+                tangent = (point - closestChunk.samples[closestSample - 1]).normalized;
             }
 
-            return false;
-        }
-
-        private bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent, out float bestSqr)
-        {
-            point = Vector3.zero;
-            tangent = Vector3.forward;
-            bestSqr = float.MaxValue;
-            bool found = false;
-
-            foreach (RoadChunk chunk in chunks)
-            {
-                for (int i = 0; i < chunk.samples.Count; i++)
-                {
-                    float sqr = (chunk.samples[i] - worldPosition).sqrMagnitude;
-                    if (sqr >= bestSqr)
-                    {
-                        continue;
-                    }
-
-                    bestSqr = sqr;
-                    found = true;
-                    point = chunk.samples[i];
-                    if (i < chunk.samples.Count - 1)
-                    {
-                        tangent = (chunk.samples[i + 1] - chunk.samples[i]).normalized;
-                    }
-                    else if (i > 0)
-                    {
-                        tangent = (chunk.samples[i] - chunk.samples[i - 1]).normalized;
-                    }
-                }
-            }
-
-            return found;
+            roadRight = Vector3.Cross(roadUp, tangent).normalized;
+            roadUp = Vector3.Cross(tangent, roadRight).normalized;
+            Vector3 offset = worldPosition - point;
+            lateralDistance = Mathf.Abs(Vector3.Dot(offset, roadRight));
+            normalDistance = Vector3.Dot(offset, roadUp);
+            return bestSqr < 60f * 60f;
         }
 
         public Vector3 GetStartPosition()
         {
             return chunks.Count > 0 && chunks[0].samples.Count > 2
-                ? chunks[0].samples[2] + Vector3.up * 0.9f
+                ? chunks[0].samples[2] + chunks[0].ups[2] * 0.9f
                 : new Vector3(0f, 0.9f, 4f);
         }
 
@@ -186,7 +138,7 @@ namespace MusicRoad
             }
 
             Vector3 forward = chunks[0].samples[3] - chunks[0].samples[2];
-            return Quaternion.LookRotation(Vector3.ProjectOnPlane(forward, Vector3.up).normalized, Vector3.up);
+            return Quaternion.LookRotation(forward.normalized, chunks[0].ups[2]);
         }
 
         private int FindNearestChunkIndex(Vector3 position)
@@ -225,7 +177,8 @@ namespace MusicRoad
                 root = root,
                 mesh = mesh,
                 collider = collider,
-                samples = new List<Vector3>()
+                samples = new List<Vector3>(),
+                ups = new List<Vector3>()
             };
         }
 
@@ -233,6 +186,7 @@ namespace MusicRoad
         {
             chunk.root.name = $"Road Chunk {sequence:0000}";
             chunk.samples.Clear();
+            chunk.ups.Clear();
 
             AudioFeatureFrame features = music != null ? music.Delayed : default;
             float energy = Mathf.Clamp01(features.intensity * 1.25f + features.vocal * 0.85f);
@@ -240,25 +194,46 @@ namespace MusicRoad
             float turnNoise = Mathf.PerlinNoise(seed, sequence * 0.115f) * 2f - 1f;
             float hillNoise = Mathf.PerlinNoise(sequence * 0.09f, seed + 4.2f) * 2f - 1f;
             float hillWave = Mathf.Sin(sequence * 0.92f + seed) * 0.9f + hillNoise * 0.72f;
-            float targetYawRate = turnNoise * Mathf.Lerp(0.5f, 2.8f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
-            float targetSlope = hillWave * Mathf.Lerp(0.2f, 0.58f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
-            targetSlope -= Mathf.Clamp(cursor.y * 0.009f, -0.13f, 0.13f);
-            targetSlope = Mathf.Clamp(targetSlope, -0.48f, 0.48f);
+            float targetYawRate = turnNoise * Mathf.Lerp(0.55f, 2.6f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
+            float targetPitchRate = hillWave * Mathf.Lerp(0.35f, 1.35f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
+            targetPitchRate += Mathf.Clamp(cursor.y * 0.006f, -0.55f, 0.55f);
+            float targetRollRate = 0f;
+
+            int stuntPhase = sequence % 18;
+            bool halfLoop = stuntPhase >= 5 && stuntPhase <= 7;
+            bool rollExit = stuntPhase >= 8 && stuntPhase <= 9;
+            if (halfLoop)
+            {
+                targetYawRate = 0f;
+                targetPitchRate = -3f;
+                targetRollRate = 0f;
+            }
+            else if (rollExit)
+            {
+                targetYawRate = 0f;
+                targetPitchRate = 0f;
+                targetRollRate = 4.5f;
+            }
 
             int sampleCount = Mathf.RoundToInt(ChunkLength / SampleSpacing);
             for (int i = 0; i <= sampleCount; i++)
             {
                 chunk.samples.Add(cursor);
+                chunk.ups.Add((frame * Vector3.up).normalized);
                 if (i == sampleCount)
                 {
                     break;
                 }
 
-                yawRate = Mathf.MoveTowards(yawRate, targetYawRate, 0.11f);
-                slope = Mathf.MoveTowards(slope, targetSlope, 0.024f);
-                yaw += yawRate * SampleSpacing;
-                Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
-                cursor += forward * SampleSpacing + Vector3.up * (slope * SampleSpacing);
+                yawRate = Mathf.MoveTowards(yawRate, targetYawRate, 0.32f);
+                pitchRate = Mathf.MoveTowards(pitchRate, targetPitchRate, 0.65f);
+                rollRate = Mathf.MoveTowards(rollRate, targetRollRate, 0.9f);
+                Quaternion localTurn = Quaternion.Euler(
+                    pitchRate * SampleSpacing,
+                    yawRate * SampleSpacing,
+                    rollRate * SampleSpacing);
+                frame = frame * localTurn;
+                cursor += (frame * Vector3.forward).normalized * SampleSpacing;
             }
 
             BuildMesh(chunk);
@@ -288,7 +263,8 @@ namespace MusicRoad
                     tangent = chunk.samples[i + 1] - chunk.samples[i];
                 }
 
-                Vector3 right = Vector3.Cross(Vector3.up, tangent.normalized).normalized;
+                Vector3 up = chunk.ups[i].normalized;
+                Vector3 right = Vector3.Cross(up, tangent.normalized).normalized;
                 float[] offsets =
                 {
                     -ShoulderHalfWidth,
@@ -353,6 +329,7 @@ namespace MusicRoad
             public Mesh mesh;
             public MeshCollider collider;
             public List<Vector3> samples;
+            public List<Vector3> ups;
             public Vector3 boundsCenter;
         }
     }

@@ -10,7 +10,8 @@ namespace MusicRoad
         private Rigidbody body;
         private RoadGenerator road;
         private Transform[] nitroFlames;
-        private float offRoadTime;
+        private Vector3 currentRoadUp = Vector3.up;
+        private float jumpMagnetRelease;
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
@@ -41,6 +42,7 @@ namespace MusicRoad
             body.mass = 650f;
             body.linearDamping = 0.12f;
             body.angularDamping = 4f;
+            body.useGravity = false;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.Continuous;
             body.centerOfMass = new Vector3(0f, -0.45f, 0f);
@@ -72,6 +74,7 @@ namespace MusicRoad
             float throttle = Input.GetAxisRaw("Vertical");
             float steering = Input.GetAxisRaw("Horizontal");
             bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            jumpMagnetRelease = Mathf.Max(0f, jumpMagnetRelease - Time.fixedDeltaTime);
             boosting = nitro && throttle > 0.1f;
             if (boosting && !wasBoosting)
             {
@@ -79,49 +82,127 @@ namespace MusicRoad
             }
             UpdateNitroFlames();
 
-            grounded = Physics.Raycast(transform.position + transform.up * 0.25f, -transform.up, out RaycastHit hit, 1.4f);
-            bool nearGeneratedRoad = road.TryGetRoadInfo(transform.position, out Vector3 roadPoint, out Vector3 roadTangent, out float lateralDistance);
+            bool nearGeneratedRoad = road.TryGetRoadInfo(
+                transform.position,
+                out Vector3 roadPoint,
+                out Vector3 roadTangent,
+                out Vector3 roadUp,
+                out Vector3 roadRight,
+                out float lateralDistance,
+                out float normalDistance);
+            currentRoadUp = nearGeneratedRoad ? roadUp : transform.up;
             onRoad = nearGeneratedRoad && lateralDistance <= RoadGenerator.RoadHalfWidth + 0.35f;
-
-            if (grounded)
+            grounded = false;
+            if (nearGeneratedRoad)
             {
-                ApplySuspensionAndAlignment(hit, roadTangent);
-            }
-
-            ApplySteering(steering);
-
-            if (grounded)
-            {
-                ApplyDrive(throttle, boosting);
-                if (jumpRequested)
+                if (jumpMagnetRelease <= 0f)
                 {
-                    body.AddForce(hit.normal * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
+                    grounded = onRoad && Physics.Raycast(
+                        transform.position + roadUp * 0.3f,
+                        -roadUp,
+                        out _,
+                        1.8f);
+                    float signedLateral = Vector3.Dot(transform.position - roadPoint, roadRight);
+                    float stuntStrength = Mathf.Clamp01(Vector3.Angle(roadUp, Vector3.up) / 35f);
+                    ApplyMagneticAdhesion(
+                        roadPoint,
+                        roadTangent,
+                        roadUp,
+                        roadRight,
+                        signedLateral,
+                        normalDistance,
+                        stuntStrength);
+                }
+                else
+                {
+                    body.AddForce(-roadUp * 5f, ForceMode.Acceleration);
                 }
             }
             else
             {
-                body.AddForce(Physics.gravity * 0.8f, ForceMode.Acceleration);
+                body.AddForce(Physics.gravity, ForceMode.Acceleration);
+            }
+
+            ApplySteering(steering);
+
+            if (grounded || nearGeneratedRoad)
+            {
+                ApplyDrive(throttle, boosting);
+                if (grounded && jumpRequested)
+                {
+                    jumpMagnetRelease = 0.65f;
+                    body.AddForce(roadUp * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
+                }
+            }
+            else
+            {
                 body.AddForce(transform.forward * (throttle * (boosting ? 14f : 3.5f)), ForceMode.Acceleration);
             }
 
             jumpRequested = false;
             wasBoosting = boosting;
-            UpdateRecovery(roadPoint);
         }
 
-        private void ApplySuspensionAndAlignment(RaycastHit hit, Vector3 roadTangent)
+        private void ApplyMagneticAdhesion(
+            Vector3 roadPoint,
+            Vector3 roadTangent,
+            Vector3 roadUp,
+            Vector3 roadRight,
+            float signedLateral,
+            float normalDistance,
+            float stuntStrength)
         {
-            float suspensionCompression = Mathf.Clamp01((1.05f - hit.distance) / 0.65f);
-            body.AddForce(hit.normal * (suspensionCompression * 24f - Vector3.Dot(body.linearVelocity, hit.normal) * 4.5f), ForceMode.Acceleration);
-
-            Vector3 desiredForward = Vector3.ProjectOnPlane(transform.forward, hit.normal).normalized;
-            if (desiredForward.sqrMagnitude < 0.1f)
+            const float rideHeight = 0.78f;
+            float clampedLateral = signedLateral;
+            if (stuntStrength > 0.05f)
             {
-                desiredForward = Vector3.ProjectOnPlane(roadTangent, hit.normal).normalized;
+                float stuntHalfWidth = Mathf.Lerp(
+                    RoadGenerator.RoadHalfWidth - 0.65f,
+                    RoadGenerator.RoadHalfWidth - 2f,
+                    stuntStrength);
+                clampedLateral = Mathf.Clamp(signedLateral, -stuntHalfWidth, stuntHalfWidth);
             }
 
-            Quaternion desiredRotation = Quaternion.LookRotation(desiredForward, hit.normal);
-            body.MoveRotation(Quaternion.Slerp(body.rotation, desiredRotation, Time.fixedDeltaTime * 6f));
+            Vector3 constrainedPosition =
+                roadPoint +
+                roadRight * clampedLateral +
+                roadUp * rideHeight;
+            float positionGrip = 1f - Mathf.Exp(
+                -Time.fixedDeltaTime * Mathf.Lerp(10f, 32f, stuntStrength));
+            body.position = Vector3.Lerp(body.position, constrainedPosition, positionGrip);
+
+            float heightError = normalDistance - rideHeight;
+            float normalSpeed = Vector3.Dot(body.linearVelocity, roadUp);
+            float magneticForce = -heightError * 88f - normalSpeed * 13f - 18f;
+            body.AddForce(roadUp * magneticForce, ForceMode.Acceleration);
+
+            Vector3 desiredForward = Vector3.ProjectOnPlane(transform.forward, roadUp).normalized;
+            if (desiredForward.sqrMagnitude < 0.1f)
+            {
+                desiredForward = roadTangent;
+            }
+
+            Vector3 trackDirection = Vector3.Dot(desiredForward, roadTangent) >= 0f
+                ? roadTangent
+                : -roadTangent;
+            desiredForward = Vector3.Slerp(
+                desiredForward,
+                trackDirection,
+                Mathf.Lerp(onRoad ? 0.22f : 0.1f, 0.76f, stuntStrength)).normalized;
+            Quaternion desiredRotation = Quaternion.LookRotation(desiredForward, roadUp);
+            body.MoveRotation(Quaternion.Slerp(
+                body.rotation,
+                desiredRotation,
+                Time.fixedDeltaTime * Mathf.Lerp(11f, 28f, stuntStrength)));
+
+            float forwardSpeed = Vector3.Dot(body.linearVelocity, trackDirection);
+            float lateralSpeed = Vector3.Dot(body.linearVelocity, roadRight);
+            Vector3 constrainedVelocity =
+                trackDirection * forwardSpeed +
+                roadRight * lateralSpeed * Mathf.Lerp(1f, 0.35f, stuntStrength);
+            float velocityGrip = 1f - Mathf.Exp(
+                -Time.fixedDeltaTime * Mathf.Lerp(5f, 30f, stuntStrength));
+            body.linearVelocity = Vector3.Lerp(body.linearVelocity, constrainedVelocity, velocityGrip);
         }
 
         private void ApplySteering(float steering)
@@ -133,7 +214,7 @@ namespace MusicRoad
             float direction = Mathf.Abs(localVelocity.z) > 0.2f ? Mathf.Sign(localVelocity.z) : 1f;
             float turnRate = Mathf.Lerp(95f, 62f, speedRatio);
             float yaw = steering * direction * turnRate * movement * Time.fixedDeltaTime;
-            Quaternion steeringRotation = Quaternion.AngleAxis(yaw, transform.up);
+            Quaternion steeringRotation = Quaternion.AngleAxis(yaw, currentRoadUp);
             body.MoveRotation(steeringRotation * body.rotation);
         }
 
@@ -141,7 +222,7 @@ namespace MusicRoad
         {
             Vector3 localVelocity = transform.InverseTransformDirection(body.linearVelocity);
             float speed = body.linearVelocity.magnitude;
-            float roadGrip = onRoad ? 1f : 0.42f;
+            float roadGrip = onRoad ? 1f : 0.72f;
 
             float speedLimit = useNitro ? NitroMaxSpeed : NormalMaxSpeed;
             if (speed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
@@ -153,11 +234,11 @@ namespace MusicRoad
             }
 
             Vector3 lateralVelocity = transform.right * localVelocity.x;
-            body.AddForce(-lateralVelocity * (onRoad ? 7.5f : 2.1f), ForceMode.Acceleration);
+            body.AddForce(-lateralVelocity * (onRoad ? 7.5f : 3.5f), ForceMode.Acceleration);
 
             if (!onRoad)
             {
-                body.AddForce(-body.linearVelocity * 0.8f, ForceMode.Acceleration);
+                body.AddForce(-body.linearVelocity * 0.22f, ForceMode.Acceleration);
             }
         }
 
@@ -184,31 +265,21 @@ namespace MusicRoad
             }
         }
 
-        private void UpdateRecovery(Vector3 roadPoint)
-        {
-            if (onRoad && grounded)
-            {
-                offRoadTime = 0f;
-            }
-            else
-            {
-                offRoadTime += Time.fixedDeltaTime;
-                if (offRoadTime > 3f || transform.position.y < roadPoint.y - 8f)
-                {
-                    ResetToSafePoint();
-                }
-            }
-        }
-
         public void ResetToSafePoint()
         {
-            offRoadTime = 0f;
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
-            if (road.TryGetClosestRoadPose(transform.position, out Vector3 roadPoint, out Vector3 roadTangent))
+            if (road.TryGetRoadInfo(
+                transform.position,
+                out Vector3 roadPoint,
+                out Vector3 roadTangent,
+                out Vector3 roadUp,
+                out _,
+                out _,
+                out _))
             {
-                Vector3 recoveryPosition = roadPoint + Vector3.up * 1.35f;
-                Quaternion recoveryRotation = Quaternion.LookRotation(roadTangent, Vector3.up);
+                Vector3 recoveryPosition = roadPoint + roadUp * 1.35f;
+                Quaternion recoveryRotation = Quaternion.LookRotation(roadTangent, roadUp);
                 transform.SetPositionAndRotation(recoveryPosition, recoveryRotation);
                 body.position = recoveryPosition;
                 body.rotation = recoveryRotation;
