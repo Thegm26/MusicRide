@@ -6,10 +6,16 @@ namespace MusicRoad
     public sealed class RoadGenerator : MonoBehaviour
     {
         public const float RoadHalfWidth = 6.5f;
-        private const float ShoulderHalfWidth = 14f;
+        private const float LandscapeHalfWidth = 44f;
+        private const float LandscapeEdgeDrop = 2.2f;
         private const float ChunkLength = 20f;
         private const float SampleSpacing = 2f;
         private const int TargetChunkCount = 16;
+        private static readonly int[] EnvironmentPattern =
+        {
+            0, 1, 0, 1, 3, 0, 1, 4,
+            5, 0, 1, 6, 7, 0, 8, 9
+        };
 
         private readonly List<RoadChunk> chunks = new List<RoadChunk>();
         private MusicWorldController music;
@@ -189,9 +195,11 @@ namespace MusicRoad
 
             if (environmentPrefabs != null && environmentPrefabs.Length > 0)
             {
-                for (int i = 0; i < 8; i++)
+                for (int i = 0; i < EnvironmentPattern.Length; i++)
                 {
-                    GameObject prefab = environmentPrefabs[(index * 8 + i) % environmentPrefabs.Length];
+                    int patternIndex = (index * 3 + i) % EnvironmentPattern.Length;
+                    int prefabIndex = EnvironmentPattern[patternIndex] % environmentPrefabs.Length;
+                    GameObject prefab = environmentPrefabs[prefabIndex];
                     if (prefab == null)
                     {
                         continue;
@@ -271,17 +279,27 @@ namespace MusicRoad
                 bool smallFoliage = itemName.Contains("grass") || itemName.Contains("mushroom");
                 bool sign = itemName.Contains("sign");
                 bool stone = itemName.Contains("stone") || itemName.Contains("rock");
+                bool tree = itemName.Contains("tree") && !itemName.Contains("stump");
+                int forestLayer = (i / 2) % 3;
                 float distance = sign
-                    ? Random.Range(15f, 17f)
+                    ? Random.Range(8.2f, 9.5f)
                     : smallFoliage
-                        ? Random.Range(15f, 22f)
-                        : Random.Range(18f, 30f);
-                item.position = chunk.samples[sampleIndex] + right * side * distance;
+                        ? Random.Range(8.5f, 15f)
+                        : tree
+                            ? 14f + forestLayer * 10f + Random.Range(0f, 5f)
+                            : Random.Range(10f, 22f);
+                float landscapeAmount = Mathf.InverseLerp(RoadHalfWidth, LandscapeHalfWidth, distance);
+                float groundOffset = -LandscapeEdgeDrop * landscapeAmount;
+                item.position = chunk.samples[sampleIndex] + right * side * distance + Vector3.up * groundOffset;
                 item.rotation = Quaternion.Euler(
                     stone ? Random.Range(-8f, 8f) : 0f,
                     Random.Range(0f, 360f),
                     stone ? Random.Range(-8f, 8f) : 0f);
-                float scale = smallFoliage ? Random.Range(1.2f, 2f) : Random.Range(0.85f, 1.3f);
+                float scale = smallFoliage
+                    ? Random.Range(1.45f, 2.35f)
+                    : tree
+                        ? Random.Range(0.95f, 1.42f)
+                        : Random.Range(0.85f, 1.35f);
                 item.localScale = Vector3.one * scale;
             }
         }
@@ -382,19 +400,22 @@ namespace MusicRoad
                 Vector3 right = Vector3.Cross(Vector3.up, tangent.normalized).normalized;
                 float[] offsets =
                 {
-                    -ShoulderHalfWidth,
+                    -LandscapeHalfWidth,
                     -RoadHalfWidth,
                     -RoadHalfWidth + 0.22f,
                     -0.11f,
                     0.11f,
                     RoadHalfWidth - 0.22f,
                     RoadHalfWidth,
-                    ShoulderHalfWidth
+                    LandscapeHalfWidth
                 };
                 for (int column = 0; column < verticesPerRow; column++)
                 {
                     int index = i * verticesPerRow + column;
-                    vertices[index] = chunk.samples[i] + right * offsets[column];
+                    float edgeDrop = column == 0 || column == verticesPerRow - 1
+                        ? LandscapeEdgeDrop
+                        : 0f;
+                    vertices[index] = chunk.samples[i] + right * offsets[column] - Vector3.up * edgeDrop;
                     uvs[index] = new Vector2(column / (verticesPerRow - 1f), (sequence * ChunkLength + i * SampleSpacing) * 0.08f);
                 }
             }

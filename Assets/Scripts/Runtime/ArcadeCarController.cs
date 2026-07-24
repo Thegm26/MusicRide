@@ -135,7 +135,7 @@ namespace MusicRoad
             }
             else
             {
-                body.AddForce(transform.forward * (throttle * (boosting ? 14f : 3.5f)), ForceMode.Acceleration);
+                body.AddForce(transform.forward * (throttle * (boosting ? 22f : 9f)), ForceMode.Acceleration);
             }
 
             jumpRequested = false;
@@ -175,15 +175,21 @@ namespace MusicRoad
         private void ApplyDrive(float throttle, bool useNitro)
         {
             Vector3 localVelocity = transform.InverseTransformDirection(body.linearVelocity);
-            float speed = body.linearVelocity.magnitude;
+            float forwardSpeed = Mathf.Abs(localVelocity.z);
             float roadGrip = onRoad ? 1f : 0.72f;
 
             float speedLimit = useNitro ? nitroMaxSpeed : normalMaxSpeed;
-            if (speed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
+            if (forwardSpeed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
             {
                 float acceleration = throttle >= 0f
                     ? useNitro ? nitroAcceleration : forwardAcceleration
                     : reverseAcceleration;
+                if (throttle > 0.05f && onRoad)
+                {
+                    float uphillAmount = Mathf.Max(0f, transform.forward.y);
+                    acceleration += uphillAmount * (Physics.gravity.magnitude * 1.35f + 5f);
+                }
+
                 body.AddForce(transform.forward * (throttle * acceleration * roadGrip), ForceMode.Acceleration);
             }
 

@@ -4,6 +4,7 @@ namespace MusicRoad
 {
     public sealed class MusicRoadBootstrap : MonoBehaviour
     {
+        public const int VehicleRenderLayer = 30;
         [SerializeField] private Shader runtimeShader;
         [SerializeField] private GameObject[] vehiclePrefabs;
         [SerializeField] private GameObject[] environmentPrefabs;
@@ -30,7 +31,7 @@ namespace MusicRoad
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
             Physics.gravity = new Vector3(0f, -18f, 0f);
-            VehicleSelectionMenu.Show(VehicleCatalog.All, StartGame);
+            VehicleSelectionMenu.Show(VehicleCatalog.All, vehiclePrefabs, StartGame);
         }
 
         private void StartGame(int selectedIndex)
@@ -128,6 +129,7 @@ namespace MusicRoad
             light.type = LightType.Directional;
             light.shadows = LightShadows.Soft;
             light.intensity = 1f;
+            light.cullingMask &= ~(1 << VehicleRenderLayer);
             light.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
             RenderSettings.sun = light;
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
@@ -159,6 +161,7 @@ namespace MusicRoad
                 visual.transform.localRotation = Quaternion.identity;
                 visual.transform.localScale = Vector3.one;
                 StripVisualPhysics(visual);
+                StabilizeVehicleMaterials(visual);
             }
             else
             {
@@ -177,8 +180,78 @@ namespace MusicRoad
                 controller.ConfigureNitroFlames(nitroFlames);
             }
 
+            SetLayerRecursively(root, VehicleRenderLayer);
+            CreateVehicleLighting(root.transform, vehicle.ColliderSize);
             rigidbody.centerOfMass = new Vector3(0f, -0.45f, 0f);
             return root;
+        }
+
+        private static void CreateVehicleLighting(Transform car, Vector3 carSize)
+        {
+            CreateVehicleLight(
+                car,
+                "Neutral Car Key Light",
+                new Vector3(-carSize.x * 0.65f, carSize.y + 2.1f, -0.8f),
+                2.15f,
+                7.5f);
+            CreateVehicleLight(
+                car,
+                "Neutral Car Fill Light",
+                new Vector3(carSize.x * 0.75f, carSize.y + 0.9f, 1.4f),
+                1.1f,
+                6f);
+        }
+
+        private static void CreateVehicleLight(
+            Transform parent,
+            string lightName,
+            Vector3 localPosition,
+            float intensity,
+            float range)
+        {
+            GameObject lightObject = new GameObject(lightName);
+            lightObject.transform.SetParent(parent, false);
+            lightObject.transform.localPosition = localPosition;
+            Light light = lightObject.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = Color.white;
+            light.intensity = intensity;
+            light.range = range;
+            light.shadows = LightShadows.None;
+            light.cullingMask = 1 << VehicleRenderLayer;
+        }
+
+        private static void StabilizeVehicleMaterials(GameObject visual)
+        {
+            Renderer[] renderers = visual.GetComponentsInChildren<Renderer>(true);
+            for (int rendererIndex = 0; rendererIndex < renderers.Length; rendererIndex++)
+            {
+                Material[] materials = renderers[rendererIndex].materials;
+                for (int materialIndex = 0; materialIndex < materials.Length; materialIndex++)
+                {
+                    Material material = materials[materialIndex];
+                    if (material == null || !material.HasProperty("_EmissionColor"))
+                    {
+                        continue;
+                    }
+
+                    material.EnableKeyword("_EMISSION");
+                    material.SetColor("_EmissionColor", Color.white * 0.22f);
+                    if (material.mainTexture != null && material.HasProperty("_EmissionMap"))
+                    {
+                        material.SetTexture("_EmissionMap", material.mainTexture);
+                    }
+                }
+            }
+        }
+
+        private static void SetLayerRecursively(GameObject root, int layer)
+        {
+            root.layer = layer;
+            foreach (Transform child in root.transform)
+            {
+                SetLayerRecursively(child.gameObject, layer);
+            }
         }
 
         private static void StripVisualPhysics(GameObject visual)

@@ -52,6 +52,7 @@ namespace MusicRoad
             beatLight.type = LightType.Point;
             beatLight.range = 38f;
             beatLight.shadows = LightShadows.None;
+            beatLight.cullingMask &= ~(1 << MusicRoadBootstrap.VehicleRenderLayer);
         }
 
         private void OnFeatures(AudioFeatureFrame frame)
