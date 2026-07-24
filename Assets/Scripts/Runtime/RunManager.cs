@@ -15,6 +15,7 @@ namespace MusicRoad
         private Text statusText;
         private Text comboText;
         private Text nitroText;
+        private Text vehicleText;
         private Text audioInputText;
         private Button connectButton;
         private readonly Image[] audioBars = new Image[3];
@@ -64,7 +65,14 @@ namespace MusicRoad
             scoreText.text = $"{Mathf.FloorToInt(score):000000}";
             speedText.text = $"{Mathf.RoundToInt(car.SpeedKph):000} km/h";
             comboText.text = $"COMBO x{combo}";
-            nitroText.text = car.IsBoosting ? "NITRO BOOST" : string.Empty;
+            nitroText.text = car.CanBoost
+                ? car.IsBoosting ? "NITRO BOOST" : "NITRO READY"
+                : "NO NITRO";
+            nitroText.color = car.IsBoosting
+                ? new Color(1f, 0.62f, 0.08f)
+                : car.CanBoost
+                    ? new Color(0.2f, 0.95f, 1f)
+                    : new Color(0.58f, 0.63f, 0.7f);
         }
 
         public void CollectBeatStar()
@@ -104,6 +112,8 @@ namespace MusicRoad
             comboText = CreateText(canvas.transform, font, "COMBO x1", 28, TextAnchor.UpperLeft, new Vector2(38f, -140f), new Vector2(300f, 50f));
             nitroText = CreateText(canvas.transform, font, string.Empty, 27, TextAnchor.UpperLeft, new Vector2(38f, -188f), new Vector2(320f, 48f));
             nitroText.color = new Color(0.2f, 0.95f, 1f);
+            vehicleText = CreateText(canvas.transform, font, car.VehicleName, 18, TextAnchor.UpperLeft, new Vector2(38f, -232f), new Vector2(400f, 38f));
+            vehicleText.color = new Color(0.72f, 0.82f, 0.9f);
 
             statusText = CreateText(canvas.transform, font, string.Empty, 22, TextAnchor.LowerCenter, new Vector2(0f, 30f), new Vector2(1000f, 80f));
             RectTransform statusRect = statusText.rectTransform;
@@ -134,7 +144,10 @@ namespace MusicRoad
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
 
-            Text controls = CreateText(canvas.transform, font, "WASD / ARROWS • DRIVE   |   SHIFT • NITRO   |   SPACE • JUMP   |   R • RESET", 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(820f, 45f));
+            string controlsValue = car.CanBoost
+                ? "WASD / ARROWS • DRIVE   |   SHIFT • NITRO   |   SPACE • JUMP   |   R • RESET"
+                : "WASD / ARROWS • DRIVE   |   SPACE • JUMP   |   R • RESET";
+            Text controls = CreateText(canvas.transform, font, controlsValue, 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(820f, 45f));
             RectTransform controlsRect = controls.rectTransform;
             controlsRect.anchorMin = Vector2.one;
             controlsRect.anchorMax = Vector2.one;

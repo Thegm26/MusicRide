@@ -24,6 +24,31 @@ namespace MusicRoad.Editor
                 throw new BuildFailedException("Assets/Shaders/MusicRoadReactive.shader could not be loaded.");
             }
             bootstrap.SetRuntimeShader(runtimeShader);
+            GameObject[] vehiclePrefabs =
+            {
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/Sport Car_39.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/N_Muscle Car_10.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/Hatchback Car_15.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/Classic Car_9.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/Pick Up_11.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/N Van_10.prefab"),
+                LoadPrefab("Assets/Awb-Free Low Poly Vehicles/Prefabs/Monster Truck_12.prefab")
+            };
+            GameObject[] environmentPrefabs =
+            {
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Tree/Fir/Mobile_forestpack_tree_fir_tall.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Tree/Leaf/Normal/Mobile_forestpack_tree_1_leaf_1.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Tree/Treestump/Mobile_forestpack_tree_stump_1.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Stone/Mobile_forestpack_stone_medium_1.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Stone/Mobile_forestpack_stone_large_1.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Foliage/Grass/Mobile_forestpack_foliage_grassPatch_small_1.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Foliage/Grass/Mobile_forestpack_foliage_grassPatch_small_2.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Foliage/Mushroom/Mobile_forestpack_foliage_mushroom_blue_big.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Foliage/Mushroom/Mobile_forestpack_foliage_mushroom_red_small.prefab"),
+                LoadPrefab("Assets/Supercyan Free Forest Sample/Prefabs/Mobile/Sign/Mobile_forestpack_roadSign_westEast_1.prefab")
+            };
+            bootstrap.SetImportedAssets(vehiclePrefabs, environmentPrefabs);
+            EditorUtility.SetDirty(bootstrap);
             EditorSceneManager.SaveScene(scene, MainScenePath);
 
             EditorBuildSettings.scenes = new[]
@@ -50,10 +75,7 @@ namespace MusicRoad.Editor
         [MenuItem("Music Road/Build WebGL")]
         public static void BuildWebGL()
         {
-            if (!File.Exists(MainScenePath))
-            {
-                CreateSceneAndConfigure();
-            }
+            CreateSceneAndConfigure();
             Directory.CreateDirectory("Build");
 
             BuildPlayerOptions options = new BuildPlayerOptions
@@ -71,6 +93,17 @@ namespace MusicRoad.Editor
             }
 
             Debug.Log($"WebGL build complete: {Path.GetFullPath(options.locationPathName)}");
+        }
+
+        private static GameObject LoadPrefab(string path)
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null)
+            {
+                throw new BuildFailedException($"Required imported prefab could not be loaded: {path}");
+            }
+
+            return prefab;
         }
     }
 }

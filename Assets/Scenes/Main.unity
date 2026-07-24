@@ -119,7 +119,7 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &1041392063
+--- !u!1 &1441803107
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -127,8 +127,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 1041392065}
-  - component: {fileID: 1041392064}
+  - component: {fileID: 1441803109}
+  - component: {fileID: 1441803108}
   m_Layer: 0
   m_Name: Music Road Bootstrap
   m_TagString: Untagged
@@ -136,26 +136,45 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &1041392064
+--- !u!114 &1441803108
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1041392063}
+  m_GameObject: {fileID: 1441803107}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1b5066805b2a284778be6032063659a0, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MusicRoad.MusicRoadBootstrap
   runtimeShader: {fileID: 4800000, guid: 9e376876c528b9da388de84ef6c1e55c, type: 3}
---- !u!4 &1041392065
+  vehiclePrefabs:
+  - {fileID: 2922220883736789182, guid: 041e4e3100f07184cacfe35dce34f022, type: 3}
+  - {fileID: 1718881139866272103, guid: d84787863a48b884e8c303159510c801, type: 3}
+  - {fileID: 793685457875359081, guid: 9c92406c14c380849bca38280c133c64, type: 3}
+  - {fileID: 3786326439804512758, guid: f4e73d783d681e04ca355f6c8a50af8e, type: 3}
+  - {fileID: 3859950695711406603, guid: eb1d6cef4963f9948a2d46b477134dfb, type: 3}
+  - {fileID: 745966575250574594, guid: 789bb11bfacf90443892854edcbb02f4, type: 3}
+  - {fileID: 7199546247579947592, guid: 8c0f502c596c3c746a68e5631858c360, type: 3}
+  environmentPrefabs:
+  - {fileID: 1210459693873458, guid: 9c78d16e4711178429930c47d8e89427, type: 3}
+  - {fileID: 1490343738201892, guid: 7e0b0adf7ef381644b302ff611ad5bd6, type: 3}
+  - {fileID: 1552303706785112, guid: 68dad9db2dc9d2249aa0a58c5d2adc36, type: 3}
+  - {fileID: 1451074748068950, guid: 7e473d16764048e40986f54d84b14754, type: 3}
+  - {fileID: 1198013417640408, guid: 652b7496d137e084a84a2e400f3769ff, type: 3}
+  - {fileID: 1991978804857108, guid: b2e600f943c41f34a89a2843ea98a353, type: 3}
+  - {fileID: 1904171308060102, guid: fcd7ea59a703cb64dada04e84ec8a7e4, type: 3}
+  - {fileID: 1127315056602366, guid: 3052ada84e39ffd4fb3cc3cbb885d867, type: 3}
+  - {fileID: 1240686429475702, guid: 1530caefe50f68042978f4b8cd52a92b, type: 3}
+  - {fileID: 1252687729517630, guid: 7dcb4ddbbd1968048b5428e0767e99a7, type: 3}
+--- !u!4 &1441803109
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1041392063}
+  m_GameObject: {fileID: 1441803107}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -168,4 +187,4 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1041392065}
+  - {fileID: 1441803109}

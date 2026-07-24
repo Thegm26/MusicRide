@@ -20,6 +20,7 @@ namespace MusicRoad
         private Material trunkMaterial;
         private Material foliageMaterial;
         private Material rockMaterial;
+        private GameObject[] environmentPrefabs;
 
         private Vector3 cursor = Vector3.zero;
         private float yaw;
@@ -36,7 +37,8 @@ namespace MusicRoad
             Material edge,
             Material trunk,
             Material foliage,
-            Material rock)
+            Material rock,
+            GameObject[] importedEnvironment)
         {
             music = musicController;
             car = carTransform;
@@ -46,6 +48,7 @@ namespace MusicRoad
             trunkMaterial = trunk;
             foliageMaterial = foliage;
             rockMaterial = rock;
+            environmentPrefabs = importedEnvironment;
 
             for (int i = 0; i < TargetChunkCount; i++)
             {
@@ -181,16 +184,35 @@ namespace MusicRoad
                 mesh = mesh,
                 collider = collider,
                 samples = new List<Vector3>(),
-                trees = new List<Transform>(),
-                rocks = new List<Transform>()
+                environmentSlots = new List<Transform>()
             };
-            for (int i = 0; i < 6; i++)
+
+            if (environmentPrefabs != null && environmentPrefabs.Length > 0)
             {
-                chunk.trees.Add(CreateTreeSlot(root.transform, i));
+                for (int i = 0; i < 8; i++)
+                {
+                    GameObject prefab = environmentPrefabs[(index * 8 + i) % environmentPrefabs.Length];
+                    if (prefab == null)
+                    {
+                        continue;
+                    }
+
+                    GameObject instance = Instantiate(prefab, root.transform);
+                    instance.name = $"ENV_SLOT_{i + 1:00}__{prefab.name}";
+                    RemoveEnvironmentPhysics(instance);
+                    chunk.environmentSlots.Add(instance.transform);
+                }
             }
-            for (int i = 0; i < 3; i++)
+            else
             {
-                chunk.rocks.Add(CreateRockSlot(root.transform, i));
+                for (int i = 0; i < 6; i++)
+                {
+                    chunk.environmentSlots.Add(CreateTreeSlot(root.transform, i));
+                }
+                for (int i = 0; i < 3; i++)
+                {
+                    chunk.environmentSlots.Add(CreateRockSlot(root.transform, i));
+                }
             }
             return chunk;
         }
@@ -235,35 +257,47 @@ namespace MusicRoad
 
         private void PopulateEnvironment(RoadChunk chunk)
         {
-            for (int i = 0; i < chunk.trees.Count; i++)
+            for (int i = 0; i < chunk.environmentSlots.Count; i++)
             {
-                int pairIndex = i / 2;
-                int sampleIndex = Mathf.Min(2 + pairIndex * 3, chunk.samples.Count - 2);
+                int sampleIndex = Mathf.Clamp(
+                    Mathf.RoundToInt(Mathf.Lerp(1f, chunk.samples.Count - 2f, (i + 0.5f) / chunk.environmentSlots.Count)),
+                    1,
+                    chunk.samples.Count - 2);
                 Vector3 tangent = (chunk.samples[sampleIndex + 1] - chunk.samples[sampleIndex]).normalized;
                 Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
                 float side = i % 2 == 0 ? -1f : 1f;
-                Transform tree = chunk.trees[i];
-                tree.position = chunk.samples[sampleIndex] + right * side * Random.Range(17f, 28f);
-                tree.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
-                tree.localScale = Vector3.one * Random.Range(0.85f, 1.35f);
+                Transform item = chunk.environmentSlots[i];
+                string itemName = item.name.ToLowerInvariant();
+                bool smallFoliage = itemName.Contains("grass") || itemName.Contains("mushroom");
+                bool sign = itemName.Contains("sign");
+                bool stone = itemName.Contains("stone") || itemName.Contains("rock");
+                float distance = sign
+                    ? Random.Range(15f, 17f)
+                    : smallFoliage
+                        ? Random.Range(15f, 22f)
+                        : Random.Range(18f, 30f);
+                item.position = chunk.samples[sampleIndex] + right * side * distance;
+                item.rotation = Quaternion.Euler(
+                    stone ? Random.Range(-8f, 8f) : 0f,
+                    Random.Range(0f, 360f),
+                    stone ? Random.Range(-8f, 8f) : 0f);
+                float scale = smallFoliage ? Random.Range(1.2f, 2f) : Random.Range(0.85f, 1.3f);
+                item.localScale = Vector3.one * scale;
+            }
+        }
+
+        private static void RemoveEnvironmentPhysics(GameObject environment)
+        {
+            Collider[] colliders = environment.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Destroy(colliders[i]);
             }
 
-            for (int i = 0; i < chunk.rocks.Count; i++)
+            Rigidbody[] bodies = environment.GetComponentsInChildren<Rigidbody>(true);
+            for (int i = 0; i < bodies.Length; i++)
             {
-                int sampleIndex = Mathf.Min(3 + i * 3, chunk.samples.Count - 2);
-                Vector3 tangent = (chunk.samples[sampleIndex + 1] - chunk.samples[sampleIndex]).normalized;
-                Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
-                float side = i % 2 == 0 ? 1f : -1f;
-                Transform rock = chunk.rocks[i];
-                rock.position = chunk.samples[sampleIndex] + right * side * Random.Range(16f, 25f);
-                rock.rotation = Quaternion.Euler(
-                    Random.Range(-12f, 12f),
-                    Random.Range(0f, 360f),
-                    Random.Range(-12f, 12f));
-                rock.localScale = new Vector3(
-                    Random.Range(0.8f, 1.8f),
-                    Random.Range(0.55f, 1.25f),
-                    Random.Range(0.8f, 1.8f));
+                Destroy(bodies[i]);
             }
         }
 
@@ -410,8 +444,7 @@ namespace MusicRoad
             public Mesh mesh;
             public MeshCollider collider;
             public List<Vector3> samples;
-            public List<Transform> trees;
-            public List<Transform> rocks;
+            public List<Transform> environmentSlots;
             public Vector3 boundsCenter;
         }
     }

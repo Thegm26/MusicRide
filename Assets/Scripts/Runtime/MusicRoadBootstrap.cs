@@ -5,10 +5,19 @@ namespace MusicRoad
     public sealed class MusicRoadBootstrap : MonoBehaviour
     {
         [SerializeField] private Shader runtimeShader;
+        [SerializeField] private GameObject[] vehiclePrefabs;
+        [SerializeField] private GameObject[] environmentPrefabs;
+        private bool gameStarted;
 
         public void SetRuntimeShader(Shader shader)
         {
             runtimeShader = shader;
+        }
+
+        public void SetImportedAssets(GameObject[] vehicles, GameObject[] environment)
+        {
+            vehiclePrefabs = vehicles;
+            environmentPrefabs = environment;
         }
 
         private void Awake()
@@ -21,7 +30,19 @@ namespace MusicRoad
             Application.targetFrameRate = 60;
             QualitySettings.vSyncCount = 0;
             Physics.gravity = new Vector3(0f, -18f, 0f);
+            VehicleSelectionMenu.Show(VehicleCatalog.All, StartGame);
+        }
 
+        private void StartGame(int selectedIndex)
+        {
+            if (gameStarted)
+            {
+                return;
+            }
+
+            gameStarted = true;
+            selectedIndex = Mathf.Clamp(selectedIndex, 0, VehicleCatalog.All.Length - 1);
+            VehicleSpec vehicle = VehicleCatalog.All[selectedIndex];
             Shader shader = runtimeShader != null ? runtimeShader : Shader.Find("MusicRoad/Reactive");
             Material roadMaterial = CreateMaterial(shader, "Road", new Color(0.09f, 0.1f, 0.14f), 0.25f);
             Material shoulderMaterial = CreateMaterial(shader, "Shoulder", new Color(0.19f, 0.35f, 0.27f), 0f);
@@ -40,7 +61,10 @@ namespace MusicRoad
             MusicWorldController world = new GameObject("Music World Controller").AddComponent<MusicWorldController>();
             world.Initialize(capture, sun, edgeMaterial, foliageMaterial);
 
-            GameObject carObject = CreateToyCar(carMaterial, darkMaterial, glassMaterial, flameMaterial);
+            GameObject selectedPrefab = vehiclePrefabs != null && selectedIndex < vehiclePrefabs.Length
+                ? vehiclePrefabs[selectedIndex]
+                : null;
+            GameObject carObject = CreatePlayerCar(selectedPrefab, vehicle, carMaterial, darkMaterial, glassMaterial, flameMaterial);
             ArcadeCarController car = carObject.GetComponent<ArcadeCarController>();
 
             RoadGenerator road = new GameObject("Procedural Music Road").AddComponent<RoadGenerator>();
@@ -52,7 +76,8 @@ namespace MusicRoad
                 edgeMaterial,
                 trunkMaterial,
                 foliageMaterial,
-                rockMaterial);
+                rockMaterial,
+                environmentPrefabs);
             car.Initialize(road);
             car.PlaceAtStart();
 
@@ -109,20 +134,74 @@ namespace MusicRoad
             return light;
         }
 
-        private static GameObject CreateToyCar(Material bodyMaterial, Material darkMaterial, Material glassMaterial, Material flameMaterial)
+        private static GameObject CreatePlayerCar(
+            GameObject visualPrefab,
+            VehicleSpec vehicle,
+            Material bodyMaterial,
+            Material darkMaterial,
+            Material glassMaterial,
+            Material flameMaterial)
         {
-            GameObject root = new GameObject("Player Toy Car");
+            GameObject root = new GameObject($"Player {vehicle.DisplayName}");
             root.transform.position = new Vector3(0f, 1f, 4f);
             Rigidbody rigidbody = root.AddComponent<Rigidbody>();
             BoxCollider collider = root.AddComponent<BoxCollider>();
-            collider.size = new Vector3(1.8f, 0.7f, 3.3f);
-            collider.center = new Vector3(0f, 0.15f, 0f);
-            root.AddComponent<ArcadeCarController>();
+            collider.size = vehicle.ColliderSize;
+            collider.center = vehicle.ColliderCenter;
+            ArcadeCarController controller = root.AddComponent<ArcadeCarController>();
+            controller.ConfigureVehicle(vehicle);
 
-            AddPrimitive(root.transform, "Body", PrimitiveType.Cube, new Vector3(0f, 0.1f, 0f), new Vector3(1.85f, 0.55f, 3.25f), bodyMaterial);
-            AddPrimitive(root.transform, "Cabin", PrimitiveType.Cube, new Vector3(0f, 0.67f, -0.28f), new Vector3(1.45f, 0.72f, 1.55f), glassMaterial);
-            AddPrimitive(root.transform, "Front Bumper", PrimitiveType.Cube, new Vector3(0f, -0.02f, 1.72f), new Vector3(1.95f, 0.18f, 0.22f), darkMaterial);
-            AddPrimitive(root.transform, "Rear Bumper", PrimitiveType.Cube, new Vector3(0f, -0.02f, -1.72f), new Vector3(1.95f, 0.18f, 0.22f), darkMaterial);
+            if (visualPrefab != null)
+            {
+                GameObject visual = Instantiate(visualPrefab, root.transform);
+                visual.name = $"{vehicle.DisplayName} Visual";
+                visual.transform.localPosition = vehicle.VisualOffset;
+                visual.transform.localRotation = Quaternion.identity;
+                visual.transform.localScale = Vector3.one;
+                StripVisualPhysics(visual);
+            }
+            else
+            {
+                CreateFallbackToyVisual(root.transform, bodyMaterial, darkMaterial, glassMaterial);
+            }
+
+            if (vehicle.CanNitro)
+            {
+                float rear = -vehicle.ColliderSize.z * 0.5f - 0.15f;
+                float side = Mathf.Min(0.58f, vehicle.ColliderSize.x * 0.27f);
+                Transform[] nitroFlames =
+                {
+                    CreateNitroFlame(root.transform, "Left Nitro Flame", new Vector3(-side, 0f, rear), flameMaterial),
+                    CreateNitroFlame(root.transform, "Right Nitro Flame", new Vector3(side, 0f, rear), flameMaterial)
+                };
+                controller.ConfigureNitroFlames(nitroFlames);
+            }
+
+            rigidbody.centerOfMass = new Vector3(0f, -0.45f, 0f);
+            return root;
+        }
+
+        private static void StripVisualPhysics(GameObject visual)
+        {
+            Collider[] colliders = visual.GetComponentsInChildren<Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
+            {
+                Destroy(colliders[i]);
+            }
+
+            Rigidbody[] rigidbodies = visual.GetComponentsInChildren<Rigidbody>(true);
+            for (int i = 0; i < rigidbodies.Length; i++)
+            {
+                Destroy(rigidbodies[i]);
+            }
+        }
+
+        private static void CreateFallbackToyVisual(Transform root, Material bodyMaterial, Material darkMaterial, Material glassMaterial)
+        {
+            AddPrimitive(root, "Body", PrimitiveType.Cube, new Vector3(0f, 0.1f, 0f), new Vector3(1.85f, 0.55f, 3.25f), bodyMaterial);
+            AddPrimitive(root, "Cabin", PrimitiveType.Cube, new Vector3(0f, 0.67f, -0.28f), new Vector3(1.45f, 0.72f, 1.55f), glassMaterial);
+            AddPrimitive(root, "Front Bumper", PrimitiveType.Cube, new Vector3(0f, -0.02f, 1.72f), new Vector3(1.95f, 0.18f, 0.22f), darkMaterial);
+            AddPrimitive(root, "Rear Bumper", PrimitiveType.Cube, new Vector3(0f, -0.02f, -1.72f), new Vector3(1.95f, 0.18f, 0.22f), darkMaterial);
 
             Vector3[] wheelPositions =
             {
@@ -131,22 +210,11 @@ namespace MusicRoad
                 new Vector3(-1f, -0.18f, -1.08f),
                 new Vector3(1f, -0.18f, -1.08f)
             };
-
             for (int i = 0; i < wheelPositions.Length; i++)
             {
-                GameObject wheel = AddPrimitive(root.transform, $"Wheel {i + 1}", PrimitiveType.Cylinder, wheelPositions[i], new Vector3(0.52f, 0.28f, 0.52f), darkMaterial);
+                GameObject wheel = AddPrimitive(root, $"Wheel {i + 1}", PrimitiveType.Cylinder, wheelPositions[i], new Vector3(0.52f, 0.28f, 0.52f), darkMaterial);
                 wheel.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
             }
-
-            Transform[] nitroFlames =
-            {
-                CreateNitroFlame(root.transform, "Left Nitro Flame", new Vector3(-0.5f, -0.02f, -1.8f), flameMaterial),
-                CreateNitroFlame(root.transform, "Right Nitro Flame", new Vector3(0.5f, -0.02f, -1.8f), flameMaterial)
-            };
-            root.GetComponent<ArcadeCarController>().ConfigureNitroFlames(nitroFlames);
-
-            rigidbody.centerOfMass = new Vector3(0f, -0.45f, 0f);
-            return root;
         }
 
         private static Transform CreateNitroFlame(Transform parent, string name, Vector3 position, Material material)

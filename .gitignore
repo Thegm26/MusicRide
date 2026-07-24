@@ -9,6 +9,13 @@ MemoryCaptures/
 Recordings/
 [Mm]emoryCaptures/
 [Cc]aptures/
+
+# Third-party Unity Asset Store packs (install locally)
+/Assets/Awb-Free Low Poly Vehicles/
+/Assets/Awb-Free Low Poly Vehicles.meta
+/Assets/Supercyan Free Forest Sample/
+/Assets/Supercyan Free Forest Sample.meta
+
 .vs/
 .idea/
 .vscode/

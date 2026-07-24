@@ -5,11 +5,19 @@ namespace MusicRoad
     [RequireComponent(typeof(Rigidbody), typeof(BoxCollider))]
     public sealed class ArcadeCarController : MonoBehaviour
     {
-        private const float NormalMaxSpeed = 30f;
-        private const float NitroMaxSpeed = 56f;
         private Rigidbody body;
         private RoadGenerator road;
         private Transform[] nitroFlames;
+        private string vehicleName = "TOY CAR";
+        private bool canBoost = true;
+        private float normalMaxSpeed = 30f;
+        private float nitroMaxSpeed = 56f;
+        private float forwardAcceleration = 18f;
+        private float nitroAcceleration = 58f;
+        private float reverseAcceleration = 11f;
+        private float lowSpeedTurnRate = 95f;
+        private float highSpeedTurnRate = 62f;
+        private float vehicleMass = 650f;
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
@@ -19,6 +27,8 @@ namespace MusicRoad
         public float SpeedKph => body == null ? 0f : body.linearVelocity.magnitude * 3.6f;
         public bool IsOnRoad => onRoad;
         public bool IsBoosting => boosting;
+        public bool CanBoost => canBoost;
+        public string VehicleName => vehicleName;
 
         private void Update()
         {
@@ -37,13 +47,31 @@ namespace MusicRoad
         {
             road = roadGenerator;
             body = GetComponent<Rigidbody>();
-            body.mass = 650f;
+            body.mass = vehicleMass;
             body.linearDamping = 0.12f;
             body.angularDamping = 4f;
             body.useGravity = true;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.Continuous;
             body.centerOfMass = new Vector3(0f, -0.45f, 0f);
+        }
+
+        public void ConfigureVehicle(VehicleSpec spec)
+        {
+            vehicleName = spec.DisplayName;
+            canBoost = spec.CanNitro;
+            normalMaxSpeed = spec.MaxSpeed;
+            nitroMaxSpeed = spec.NitroMaxSpeed;
+            forwardAcceleration = spec.ForwardAcceleration;
+            nitroAcceleration = spec.NitroAcceleration;
+            reverseAcceleration = spec.ReverseAcceleration;
+            lowSpeedTurnRate = spec.LowSpeedTurnRate;
+            highSpeedTurnRate = spec.HighSpeedTurnRate;
+            vehicleMass = spec.Mass;
+            if (body != null)
+            {
+                body.mass = vehicleMass;
+            }
         }
 
         public void ConfigureNitroFlames(Transform[] flames)
@@ -72,7 +100,7 @@ namespace MusicRoad
             float throttle = Input.GetAxisRaw("Vertical");
             float steering = Input.GetAxisRaw("Horizontal");
             bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            boosting = nitro && throttle > 0.1f;
+            boosting = canBoost && nitro && throttle > 0.1f;
             if (boosting && !wasBoosting)
             {
                 body.AddForce(transform.forward * 4.5f, ForceMode.VelocityChange);
@@ -135,10 +163,10 @@ namespace MusicRoad
         {
             Vector3 localVelocity = transform.InverseTransformDirection(body.linearVelocity);
             float speed = body.linearVelocity.magnitude;
-            float speedRatio = Mathf.Clamp01(speed / NormalMaxSpeed);
+            float speedRatio = Mathf.Clamp01(speed / normalMaxSpeed);
             float movement = Mathf.InverseLerp(0.2f, 3f, Mathf.Abs(localVelocity.z));
             float direction = Mathf.Abs(localVelocity.z) > 0.2f ? Mathf.Sign(localVelocity.z) : 1f;
-            float turnRate = Mathf.Lerp(95f, 62f, speedRatio);
+            float turnRate = Mathf.Lerp(lowSpeedTurnRate, highSpeedTurnRate, speedRatio);
             float yaw = steering * direction * turnRate * movement * Time.fixedDeltaTime;
             Quaternion steeringRotation = Quaternion.AngleAxis(yaw, transform.up);
             body.MoveRotation(steeringRotation * body.rotation);
@@ -150,12 +178,12 @@ namespace MusicRoad
             float speed = body.linearVelocity.magnitude;
             float roadGrip = onRoad ? 1f : 0.72f;
 
-            float speedLimit = useNitro ? NitroMaxSpeed : NormalMaxSpeed;
+            float speedLimit = useNitro ? nitroMaxSpeed : normalMaxSpeed;
             if (speed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
             {
                 float acceleration = throttle >= 0f
-                    ? useNitro ? 58f : 18f
-                    : 11f;
+                    ? useNitro ? nitroAcceleration : forwardAcceleration
+                    : reverseAcceleration;
                 body.AddForce(transform.forward * (throttle * acceleration * roadGrip), ForceMode.Acceleration);
             }
 
