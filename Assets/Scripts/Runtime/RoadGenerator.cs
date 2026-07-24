@@ -9,7 +9,7 @@ namespace MusicRoad
         private const float ShoulderHalfWidth = 14f;
         private const float ChunkLength = 20f;
         private const float SampleSpacing = 2f;
-        private const int TargetChunkCount = 12;
+        private const int TargetChunkCount = 16;
 
         private readonly List<RoadChunk> chunks = new List<RoadChunk>();
         private MusicWorldController music;
@@ -81,6 +81,60 @@ namespace MusicRoad
         public bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent)
         {
             return TryGetClosestRoadPose(worldPosition, out point, out tangent, out _);
+        }
+
+        public bool TryGetPointAhead(Vector3 worldPosition, float distance, out Vector3 point, out Vector3 tangent)
+        {
+            point = Vector3.zero;
+            tangent = Vector3.forward;
+            int closestChunk = -1;
+            int closestSample = -1;
+            float bestSqr = float.MaxValue;
+
+            for (int chunkIndex = 0; chunkIndex < chunks.Count; chunkIndex++)
+            {
+                RoadChunk chunk = chunks[chunkIndex];
+                for (int sampleIndex = 0; sampleIndex < chunk.samples.Count; sampleIndex++)
+                {
+                    float sqr = (chunk.samples[sampleIndex] - worldPosition).sqrMagnitude;
+                    if (sqr < bestSqr)
+                    {
+                        bestSqr = sqr;
+                        closestChunk = chunkIndex;
+                        closestSample = sampleIndex;
+                    }
+                }
+            }
+
+            if (closestChunk < 0)
+            {
+                return false;
+            }
+
+            float remaining = Mathf.Max(0f, distance);
+            Vector3 cursorPoint = chunks[closestChunk].samples[closestSample];
+            for (int chunkIndex = closestChunk; chunkIndex < chunks.Count; chunkIndex++)
+            {
+                List<Vector3> samples = chunks[chunkIndex].samples;
+                int startSample = chunkIndex == closestChunk ? closestSample + 1 : 1;
+                for (int sampleIndex = startSample; sampleIndex < samples.Count; sampleIndex++)
+                {
+                    Vector3 nextPoint = samples[sampleIndex];
+                    Vector3 segment = nextPoint - cursorPoint;
+                    float segmentLength = segment.magnitude;
+                    if (remaining <= segmentLength)
+                    {
+                        tangent = segment.normalized;
+                        point = Vector3.Lerp(cursorPoint, nextPoint, remaining / Mathf.Max(0.001f, segmentLength));
+                        return true;
+                    }
+
+                    remaining -= segmentLength;
+                    cursorPoint = nextPoint;
+                }
+            }
+
+            return false;
         }
 
         private bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent, out float bestSqr)

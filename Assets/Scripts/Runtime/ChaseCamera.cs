@@ -36,8 +36,8 @@ namespace MusicRoad
                 Camera camera = GetComponent<Camera>();
                 if (camera != null)
                 {
-                    float boostFov = car != null && car.IsBoosting ? 13f : 0f;
-                    camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, 66f + music.Immediate.rms * 8f + music.BeatPulse * 5f + boostFov, Time.deltaTime * 9f);
+                    float boostFov = car != null && car.IsBoosting ? 8f : 0f;
+                    camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, 60f + music.Immediate.rms * 5f + music.BeatPulse * 3f + boostFov, Time.deltaTime * 9f);
                 }
 
                 if (music.BeatPulse > 0.01f)

@@ -31,6 +31,7 @@ namespace MusicRoad
             Material glassMaterial = CreateMaterial(shader, "Toy Glass", new Color(0.18f, 0.65f, 0.9f), 0.8f);
             Material flameMaterial = CreateMaterial(shader, "Nitro Flame", new Color(1f, 0.58f, 0.04f), 0f, true);
             Material propMaterial = CreateMaterial(shader, "Red Road Blocks", new Color(0.9f, 0.035f, 0.025f), 0.25f, true);
+            Material windMaterial = CreateMaterial(shader, "Peak Wind", new Color(0.88f, 0.96f, 1f), 0f, true);
 
             AudioCaptureService capture = new GameObject("AudioCaptureService").AddComponent<AudioCaptureService>();
             Light sun = CreateLighting();
@@ -48,6 +49,8 @@ namespace MusicRoad
             CreateCamera(carObject.transform, world);
             MusicHazardSpawner hazards = new GameObject("Music Hazard Spawner").AddComponent<MusicHazardSpawner>();
             hazards.Initialize(world, carObject.transform, road, propMaterial);
+            MusicPeakWind wind = new GameObject("Maximum Music Wind").AddComponent<MusicPeakWind>();
+            wind.Initialize(world, carObject.transform, windMaterial);
 
             RunManager run = new GameObject("Run Manager").AddComponent<RunManager>();
             run.Initialize(capture, car);
@@ -192,9 +195,9 @@ namespace MusicRoad
             GameObject cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
             Camera camera = cameraObject.AddComponent<Camera>();
-            camera.fieldOfView = 66f;
+            camera.fieldOfView = 60f;
             camera.nearClipPlane = 0.15f;
-            camera.farClipPlane = 500f;
+            camera.farClipPlane = 230f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.16f, 0.22f, 0.34f);
             cameraObject.AddComponent<AudioListener>();

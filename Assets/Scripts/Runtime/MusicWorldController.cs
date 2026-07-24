@@ -38,7 +38,7 @@ namespace MusicRoad
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.006f;
+            RenderSettings.fogDensity = 0.012f;
 
             GameObject beatLightObject = new GameObject("Music Beat Flash");
             beatLightObject.transform.SetParent(transform, false);
@@ -105,7 +105,7 @@ namespace MusicRoad
             }
 
             RenderSettings.fogColor = Color.Lerp(RenderSettings.fogColor, opposite * 0.48f, Time.unscaledDeltaTime * 5f);
-            RenderSettings.fogDensity = Mathf.Lerp(0.027f, 0.0025f, Mathf.Max(energy, vocal));
+            RenderSettings.fogDensity = Mathf.Lerp(0.016f, 0.0065f, Mathf.Max(energy, vocal));
             RenderSettings.ambientLight = Color.Lerp(new Color(0.025f, 0.03f, 0.06f), spectral * 1.25f, energy * 0.6f + vocal * 0.4f);
 
             if (sun != null)

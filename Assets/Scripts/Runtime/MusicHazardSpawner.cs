@@ -10,6 +10,7 @@ namespace MusicRoad
 
         private MusicWorldController music;
         private Transform car;
+        private ArcadeCarController carController;
         private RoadGenerator road;
         private Material material;
         private float spawnTimer;
@@ -24,6 +25,7 @@ namespace MusicRoad
         {
             music = controller;
             car = carTransform;
+            carController = carTransform.GetComponent<ArcadeCarController>();
             road = roadGenerator;
             material = hazardMaterial;
 
@@ -91,9 +93,9 @@ namespace MusicRoad
                 return;
             }
 
-            float distance = Random.Range(25f, 42f);
-            Vector3 probe = car.position + car.forward * distance;
-            if (!road.TryGetRoadInfo(probe, out Vector3 roadPoint, out Vector3 tangent, out _))
+            float speedMps = carController != null ? carController.SpeedKph / 3.6f : 20f;
+            float distance = Mathf.Clamp(speedMps * 4f + 40f + Random.Range(-7f, 7f), 95f, 168f);
+            if (!road.TryGetPointAhead(car.position, distance, out Vector3 roadPoint, out Vector3 tangent))
             {
                 return;
             }
@@ -141,7 +143,7 @@ namespace MusicRoad
             transform.position = position;
             transform.localScale = Vector3.one * scale;
             transform.rotation = rotation;
-            remainingLife = 10f;
+            remainingLife = 18f;
 
             body.position = position;
             body.rotation = rotation;
