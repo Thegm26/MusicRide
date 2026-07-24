@@ -36,7 +36,7 @@ mergeInto(LibraryManager.library, {
     },
 
     updateSongWindow: function (level) {
-      var capacity = 240;
+      var capacity = 800;
       if (MusicRoadCapture.levelHistory.length < capacity) {
         MusicRoadCapture.levelHistory.push(level);
       } else {
@@ -57,8 +57,8 @@ mergeInto(LibraryManager.library, {
       var sorted = MusicRoadCapture.levelHistory.slice().sort(function (a, b) {
         return a - b;
       });
-      var floorIndex = Math.floor((sorted.length - 1) * 0.12);
-      var ceilingIndex = Math.floor((sorted.length - 1) * 0.9);
+      var floorIndex = Math.floor((sorted.length - 1) * 0.08);
+      var ceilingIndex = Math.floor((sorted.length - 1) * 0.97);
       var targetFloor = sorted[floorIndex];
       var targetCeiling = Math.max(targetFloor + 0.018, sorted[ceilingIndex]);
       MusicRoadCapture.windowFloor =
@@ -214,7 +214,7 @@ mergeInto(LibraryManager.library, {
 
       MusicRoadCapture.updateSongWindow(rawLevel);
       var intensity;
-      if (MusicRoadCapture.levelHistory.length < 24) {
+      if (MusicRoadCapture.levelHistory.length < 80) {
         intensity = Math.min(0.78, rawLevel / (rawLevel + 0.12));
       } else {
         var windowRange = Math.max(

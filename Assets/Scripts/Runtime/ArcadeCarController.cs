@@ -5,7 +5,8 @@ namespace MusicRoad
     [RequireComponent(typeof(Rigidbody), typeof(BoxCollider))]
     public sealed class ArcadeCarController : MonoBehaviour
     {
-        private const float MaxSpeed = 30f;
+        private const float NormalMaxSpeed = 30f;
+        private const float NitroMaxSpeed = 44f;
         private Rigidbody body;
         private RoadGenerator road;
         private Vector3 safePosition;
@@ -15,9 +16,11 @@ namespace MusicRoad
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
+        private bool boosting;
 
         public float SpeedKph => body == null ? 0f : body.linearVelocity.magnitude * 3.6f;
         public bool IsOnRoad => onRoad;
+        public bool IsBoosting => boosting;
 
         private void Update()
         {
@@ -62,6 +65,8 @@ namespace MusicRoad
 
             float throttle = Input.GetAxisRaw("Vertical");
             float steering = Input.GetAxisRaw("Horizontal");
+            bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+            boosting = nitro && throttle > 0.1f;
 
             grounded = Physics.Raycast(transform.position + transform.up * 0.25f, -transform.up, out RaycastHit hit, 1.4f);
             road.TryGetRoadInfo(transform.position, out Vector3 roadPoint, out Vector3 roadTangent, out float lateralDistance);
@@ -76,7 +81,7 @@ namespace MusicRoad
 
             if (grounded)
             {
-                ApplyDrive(throttle);
+                ApplyDrive(throttle, boosting);
                 if (jumpRequested)
                 {
                     body.AddForce(hit.normal * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
@@ -85,7 +90,7 @@ namespace MusicRoad
             else
             {
                 body.AddForce(Physics.gravity * 0.8f, ForceMode.Acceleration);
-                body.AddForce(transform.forward * (throttle * 3.5f), ForceMode.Acceleration);
+                body.AddForce(transform.forward * (throttle * (boosting ? 7f : 3.5f)), ForceMode.Acceleration);
             }
 
             jumpRequested = false;
@@ -111,7 +116,7 @@ namespace MusicRoad
         {
             Vector3 localVelocity = transform.InverseTransformDirection(body.linearVelocity);
             float speed = body.linearVelocity.magnitude;
-            float speedRatio = Mathf.Clamp01(speed / MaxSpeed);
+            float speedRatio = Mathf.Clamp01(speed / NormalMaxSpeed);
             float movement = Mathf.InverseLerp(0.2f, 3f, Mathf.Abs(localVelocity.z));
             float direction = Mathf.Abs(localVelocity.z) > 0.2f ? Mathf.Sign(localVelocity.z) : 1f;
             float turnRate = Mathf.Lerp(95f, 62f, speedRatio);
@@ -120,15 +125,18 @@ namespace MusicRoad
             body.MoveRotation(steeringRotation * body.rotation);
         }
 
-        private void ApplyDrive(float throttle)
+        private void ApplyDrive(float throttle, bool useNitro)
         {
             Vector3 localVelocity = transform.InverseTransformDirection(body.linearVelocity);
             float speed = body.linearVelocity.magnitude;
             float roadGrip = onRoad ? 1f : 0.42f;
 
-            if (speed < MaxSpeed || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
+            float speedLimit = useNitro ? NitroMaxSpeed : NormalMaxSpeed;
+            if (speed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
             {
-                float acceleration = throttle >= 0f ? 18f : 11f;
+                float acceleration = throttle >= 0f
+                    ? useNitro ? 34f : 18f
+                    : 11f;
                 body.AddForce(transform.forward * (throttle * acceleration * roadGrip), ForceMode.Acceleration);
             }
 

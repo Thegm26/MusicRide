@@ -40,7 +40,7 @@ namespace MusicRoad
             ArcadeCarController car = carObject.GetComponent<ArcadeCarController>();
 
             RoadGenerator road = new GameObject("Procedural Music Road").AddComponent<RoadGenerator>();
-            road.Initialize(world, carObject.transform, roadMaterial, shoulderMaterial, edgeMaterial, propMaterial);
+            road.Initialize(world, carObject.transform, roadMaterial, shoulderMaterial, edgeMaterial);
             car.Initialize(road);
             car.PlaceAtStart();
 

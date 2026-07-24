@@ -7,7 +7,7 @@ A Unity 6 WebGL prototype where a toy car drives along an endless procedural roa
 1. Open the project with Unity `6000.4.8f1`.
 2. Open `Assets/Scenes/Main.unity`.
 3. Enter Play Mode. The Editor uses a synthetic music signal so every system remains testable.
-4. Drive with WASD or the arrow keys. Press R to reset.
+4. Drive with WASD or the arrow keys. Hold Shift for nitro, press Space to jump, and press R to reset.
 
 ## Connect computer audio
 

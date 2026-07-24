@@ -5,8 +5,8 @@ namespace MusicRoad
 {
     public sealed class RoadGenerator : MonoBehaviour
     {
-        public const float RoadHalfWidth = 4.5f;
-        private const float ShoulderHalfWidth = 11f;
+        public const float RoadHalfWidth = 6.5f;
+        private const float ShoulderHalfWidth = 14f;
         private const float ChunkLength = 20f;
         private const float SampleSpacing = 2f;
         private const int TargetChunkCount = 12;
@@ -17,7 +17,6 @@ namespace MusicRoad
         private Material roadMaterial;
         private Material shoulderMaterial;
         private Material edgeMaterial;
-        private Material propMaterial;
 
         private Vector3 cursor = Vector3.zero;
         private float yaw;
@@ -31,15 +30,13 @@ namespace MusicRoad
             Transform carTransform,
             Material road,
             Material shoulder,
-            Material edge,
-            Material prop)
+            Material edge)
         {
             music = musicController;
             car = carTransform;
             roadMaterial = road;
             shoulderMaterial = shoulder;
             edgeMaterial = edge;
-            propMaterial = prop;
 
             for (int i = 0; i < TargetChunkCount; i++)
             {
@@ -150,27 +147,12 @@ namespace MusicRoad
             mesh.MarkDynamic();
             filter.sharedMesh = mesh;
 
-            Transform decorRoot = new GameObject("Music Props").transform;
-            decorRoot.SetParent(root.transform, false);
-
-            var props = new List<Transform>();
-            for (int i = 0; i < 6; i++)
-            {
-                GameObject prop = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                prop.name = $"Prop {i + 1}";
-                prop.transform.SetParent(decorRoot, false);
-                prop.GetComponent<Renderer>().sharedMaterial = propMaterial;
-                Destroy(prop.GetComponent<Collider>());
-                props.Add(prop.transform);
-            }
-
             return new RoadChunk
             {
                 root = root,
                 mesh = mesh,
                 collider = collider,
-                samples = new List<Vector3>(),
-                props = props
+                samples = new List<Vector3>()
             };
         }
 
@@ -207,7 +189,6 @@ namespace MusicRoad
             }
 
             BuildMesh(chunk);
-            ConfigureDecor(chunk, features);
             chunk.boundsCenter = chunk.samples[chunk.samples.Count / 2];
             sequence++;
         }
@@ -281,39 +262,12 @@ namespace MusicRoad
             triangles.Add(d);
         }
 
-        private void ConfigureDecor(RoadChunk chunk, AudioFeatureFrame features)
-        {
-            int activeProps = Mathf.Clamp(Mathf.RoundToInt(2f + features.intensity * 6f), 2, chunk.props.Count);
-            Vector3 center = chunk.samples[chunk.samples.Count / 2];
-            Vector3 tangent = (chunk.samples[^1] - chunk.samples[0]).normalized;
-            Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
-
-            for (int i = 0; i < chunk.props.Count; i++)
-            {
-                Transform prop = chunk.props[i];
-                bool active = i < activeProps;
-                prop.gameObject.SetActive(active);
-                if (!active)
-                {
-                    continue;
-                }
-
-                float side = i % 2 == 0 ? -1f : 1f;
-                float along = (i - activeProps * 0.5f) * 3.1f;
-                const float scale = 1.5f;
-                prop.position = center + tangent * along + right * side * (13f + (i % 3) * 2.3f) + Vector3.up * scale * 0.5f;
-                prop.localScale = Vector3.one * scale;
-                prop.rotation = Quaternion.LookRotation(tangent, Vector3.up);
-            }
-        }
-
         private sealed class RoadChunk
         {
             public GameObject root;
             public Mesh mesh;
             public MeshCollider collider;
             public List<Vector3> samples;
-            public List<Transform> props;
             public Vector3 boundsCenter;
         }
     }

@@ -100,9 +100,9 @@ namespace MusicRoad
 
             Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
             float lane = burstCount <= 1
-                ? Random.Range(-2.8f, 2.8f)
-                : Mathf.Lerp(-2.6f, 2.6f, burstIndex / (burstCount - 1f));
-            const float scale = 1.5f;
+                ? Random.Range(-4.7f, 4.7f)
+                : Mathf.Lerp(-4.4f, 4.4f, burstIndex / (burstCount - 1f));
+            const float scale = 2f;
             Vector3 roadUp = Vector3.Cross(tangent, right).normalized;
             Vector3 position = roadPoint + right * lane + roadUp * (scale * 0.5f);
             Quaternion rotation = Quaternion.LookRotation(tangent, roadUp);

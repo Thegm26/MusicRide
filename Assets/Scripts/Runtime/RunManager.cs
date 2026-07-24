@@ -14,6 +14,7 @@ namespace MusicRoad
         private Text speedText;
         private Text statusText;
         private Text comboText;
+        private Text nitroText;
         private Text audioInputText;
         private Button connectButton;
         private readonly Image[] audioBars = new Image[3];
@@ -63,6 +64,7 @@ namespace MusicRoad
             scoreText.text = $"{Mathf.FloorToInt(score):000000}";
             speedText.text = $"{Mathf.RoundToInt(car.SpeedKph):000} km/h";
             comboText.text = $"COMBO x{combo}";
+            nitroText.text = car.IsBoosting ? "NITRO BOOST" : string.Empty;
         }
 
         public void CollectBeatStar()
@@ -100,6 +102,8 @@ namespace MusicRoad
             scoreText = CreateText(canvas.transform, font, "000000", 44, TextAnchor.UpperLeft, new Vector2(35f, -30f), new Vector2(420f, 70f));
             speedText = CreateText(canvas.transform, font, "000 km/h", 32, TextAnchor.UpperLeft, new Vector2(38f, -90f), new Vector2(300f, 55f));
             comboText = CreateText(canvas.transform, font, "COMBO x1", 28, TextAnchor.UpperLeft, new Vector2(38f, -140f), new Vector2(300f, 50f));
+            nitroText = CreateText(canvas.transform, font, string.Empty, 27, TextAnchor.UpperLeft, new Vector2(38f, -188f), new Vector2(320f, 48f));
+            nitroText.color = new Color(0.2f, 0.95f, 1f);
 
             statusText = CreateText(canvas.transform, font, string.Empty, 22, TextAnchor.LowerCenter, new Vector2(0f, 30f), new Vector2(1000f, 80f));
             RectTransform statusRect = statusText.rectTransform;
@@ -130,7 +134,7 @@ namespace MusicRoad
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
 
-            Text controls = CreateText(canvas.transform, font, "WASD / ARROWS • DRIVE   |   SPACE • JUMP   |   R • RESET", 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(650f, 45f));
+            Text controls = CreateText(canvas.transform, font, "WASD / ARROWS • DRIVE   |   SHIFT • NITRO   |   SPACE • JUMP   |   R • RESET", 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(820f, 45f));
             RectTransform controlsRect = controls.rectTransform;
             controlsRect.anchorMin = Vector2.one;
             controlsRect.anchorMax = Vector2.one;
@@ -234,7 +238,7 @@ namespace MusicRoad
             }
             else if (audible)
             {
-                audioInputText.text = "SONG WINDOW: LIVE • 18 SEC";
+                audioInputText.text = "SONG WINDOW: LIVE • 60 SEC";
                 audioInputText.color = new Color(0.35f, 1f, 0.65f);
             }
             else if (capture.State == AudioCaptureState.Active)
