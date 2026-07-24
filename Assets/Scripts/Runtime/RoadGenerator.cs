@@ -66,9 +66,29 @@ namespace MusicRoad
 
         public bool TryGetRoadInfo(Vector3 worldPosition, out Vector3 point, out Vector3 tangent, out float lateralDistance)
         {
+            bool found = TryGetClosestRoadPose(worldPosition, out point, out tangent, out float bestSqr);
+            if (!found)
+            {
+                lateralDistance = float.MaxValue;
+                return false;
+            }
+
+            Vector3 planarOffset = Vector3.ProjectOnPlane(worldPosition - point, Vector3.up);
+            lateralDistance = planarOffset.magnitude;
+            return bestSqr < 55f * 55f;
+        }
+
+        public bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent)
+        {
+            return TryGetClosestRoadPose(worldPosition, out point, out tangent, out _);
+        }
+
+        private bool TryGetClosestRoadPose(Vector3 worldPosition, out Vector3 point, out Vector3 tangent, out float bestSqr)
+        {
             point = Vector3.zero;
             tangent = Vector3.forward;
-            float bestSqr = float.MaxValue;
+            bestSqr = float.MaxValue;
+            bool found = false;
 
             foreach (RoadChunk chunk in chunks)
             {
@@ -81,6 +101,7 @@ namespace MusicRoad
                     }
 
                     bestSqr = sqr;
+                    found = true;
                     point = chunk.samples[i];
                     if (i < chunk.samples.Count - 1)
                     {
@@ -93,9 +114,7 @@ namespace MusicRoad
                 }
             }
 
-            Vector3 planarOffset = Vector3.ProjectOnPlane(worldPosition - point, Vector3.up);
-            lateralDistance = planarOffset.magnitude;
-            return bestSqr < 55f * 55f;
+            return found;
         }
 
         public Vector3 GetStartPosition()

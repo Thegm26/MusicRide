@@ -19,6 +19,9 @@ mergeInto(LibraryManager.library, {
     windowFloor: 0.01,
     windowCeiling: 0.16,
     windowUpdateCounter: 0,
+    lastAudibleTime: 0,
+    resetWindowOnNextSignal: false,
+    windowReadySent: false,
     lastBeatTime: 0,
     captureStartedAt: 0,
     signalDetected: false,
@@ -65,6 +68,18 @@ mergeInto(LibraryManager.library, {
         MusicRoadCapture.windowFloor * 0.82 + targetFloor * 0.18;
       MusicRoadCapture.windowCeiling =
         MusicRoadCapture.windowCeiling * 0.82 + targetCeiling * 0.18;
+    },
+
+    resetSongWindow: function (level) {
+      MusicRoadCapture.levelHistory = [level];
+      MusicRoadCapture.historyIndex = 0;
+      MusicRoadCapture.windowFloor = Math.max(0.004, level * 0.35);
+      MusicRoadCapture.windowCeiling = Math.max(
+        MusicRoadCapture.windowFloor + 0.028,
+        level * 1.65
+      );
+      MusicRoadCapture.windowUpdateCounter = 0;
+      MusicRoadCapture.windowReadySent = false;
     },
 
     relativeBand: function (value, rollingValue, intensity) {
@@ -119,6 +134,9 @@ mergeInto(LibraryManager.library, {
       MusicRoadCapture.windowFloor = 0.01;
       MusicRoadCapture.windowCeiling = 0.16;
       MusicRoadCapture.windowUpdateCounter = 0;
+      MusicRoadCapture.lastAudibleTime = 0;
+      MusicRoadCapture.resetWindowOnNextSignal = false;
+      MusicRoadCapture.windowReadySent = false;
 
       if (notify) {
         MusicRoadCapture.sendState("Ended", "Music sharing stopped. Click Connect Music to reconnect.");
@@ -198,7 +216,7 @@ mergeInto(LibraryManager.library, {
         MusicRoadCapture.signalDetected = true;
         MusicRoadCapture.sendState(
           "Active",
-          "LIVE COMPUTER AUDIO DETECTED \u2022 lights react now, road reacts in about 4 seconds."
+          "LIVE COMPUTER AUDIO DETECTED \u2022 calibrating this song for about 20 seconds."
         );
       } else if (
         !MusicRoadCapture.signalDetected &&
@@ -212,13 +230,41 @@ mergeInto(LibraryManager.library, {
         );
       }
 
-      MusicRoadCapture.updateSongWindow(rawLevel);
-      var intensity;
-      if (MusicRoadCapture.levelHistory.length < 80) {
-        intensity = Math.min(0.78, rawLevel / (rawLevel + 0.12));
-      } else {
+      var isAudible = rawLevel > 0.004;
+      var songRestarted = false;
+      if (isAudible) {
+        if (MusicRoadCapture.resetWindowOnNextSignal) {
+          MusicRoadCapture.resetSongWindow(rawLevel);
+          MusicRoadCapture.resetWindowOnNextSignal = false;
+          songRestarted = true;
+          MusicRoadCapture.sendState(
+            "Active",
+            "LIVE \u2022 NEW SONG DETECTED \u2022 recalibrating for about 20 seconds."
+          );
+        } else {
+          MusicRoadCapture.updateSongWindow(rawLevel);
+        }
+        MusicRoadCapture.lastAudibleTime = now;
+      } else if (
+        MusicRoadCapture.lastAudibleTime > 0 &&
+        now - MusicRoadCapture.lastAudibleTime > 4000
+      ) {
+        MusicRoadCapture.resetWindowOnNextSignal = true;
+      }
+
+      var sampleCount = MusicRoadCapture.levelHistory.length;
+      var analysisConfidence = Math.max(
+        0,
+        Math.min(1, (sampleCount - 240) / 160)
+      );
+      var conservativeIntensity = Math.min(
+        0.48,
+        rawLevel / (rawLevel + 0.16) * 0.62
+      );
+      var intensity = conservativeIntensity;
+      if (sampleCount >= 240) {
         var windowRange = Math.max(
-          0.018,
+          0.028,
           MusicRoadCapture.windowCeiling - MusicRoadCapture.windowFloor
         );
         var windowPosition = Math.max(
@@ -237,29 +283,47 @@ mergeInto(LibraryManager.library, {
               (windowRange * 0.4)
           )
         );
-        intensity = Math.min(
-          0.96,
-          0.05 + constrainedPosition * 0.72 + exceptionalPeak * 0.19
+        var normalizedIntensity = Math.min(
+          0.88,
+          0.04 + constrainedPosition * 0.65 + exceptionalPeak * 0.18
         );
+        intensity =
+          conservativeIntensity * (1 - analysisConfidence) +
+          normalizedIntensity * analysisConfidence;
+        if (!MusicRoadCapture.windowReadySent) {
+          MusicRoadCapture.windowReadySent = true;
+          MusicRoadCapture.sendState(
+            "Active",
+            "LIVE SONG PROFILE READY \u2022 reacting from audible 60-second statistics."
+          );
+        }
       }
 
-      MusicRoadCapture.rollingEnergy =
-        MusicRoadCapture.rollingEnergy * 0.96 + rawLevel * 0.04;
-      MusicRoadCapture.rollingBass =
-        MusicRoadCapture.rollingBass * 0.96 + bass * 0.04;
-      MusicRoadCapture.rollingVocal =
-        MusicRoadCapture.rollingVocal * 0.96 + vocal * 0.04;
-      MusicRoadCapture.rollingTreble =
-        MusicRoadCapture.rollingTreble * 0.96 + treble * 0.04;
-      MusicRoadCapture.rollingFlux =
-        MusicRoadCapture.rollingFlux * 0.92 + fluxLevel * 0.08;
+      if (songRestarted) {
+        MusicRoadCapture.rollingEnergy = rawLevel;
+        MusicRoadCapture.rollingBass = bass;
+        MusicRoadCapture.rollingVocal = vocal;
+        MusicRoadCapture.rollingTreble = treble;
+        MusicRoadCapture.rollingFlux = Math.max(0.001, fluxLevel);
+      } else if (isAudible) {
+        MusicRoadCapture.rollingEnergy =
+          MusicRoadCapture.rollingEnergy * 0.96 + rawLevel * 0.04;
+        MusicRoadCapture.rollingBass =
+          MusicRoadCapture.rollingBass * 0.96 + bass * 0.04;
+        MusicRoadCapture.rollingVocal =
+          MusicRoadCapture.rollingVocal * 0.96 + vocal * 0.04;
+        MusicRoadCapture.rollingTreble =
+          MusicRoadCapture.rollingTreble * 0.96 + treble * 0.04;
+        MusicRoadCapture.rollingFlux =
+          MusicRoadCapture.rollingFlux * 0.92 + fluxLevel * 0.08;
+      }
 
       var vocalRatio = vocal / Math.max(0.006, MusicRoadCapture.rollingVocal);
       var vocalRise = Math.max(0, Math.min(1, (vocalRatio - 0.82) / 1.32));
       var vocalStrength = Math.min(
-        0.9,
+        0.86,
         vocalRise * 0.72 + intensity * 0.22
-      );
+      ) * (0.55 + analysisConfidence * 0.45);
       var hitRatio =
         fluxLevel / Math.max(0.0015, MusicRoadCapture.rollingFlux);
       var percussion = Math.max(
@@ -269,7 +333,12 @@ mergeInto(LibraryManager.library, {
       if (fluxLevel < MusicRoadCapture.rollingFlux * 0.9) {
         percussion = 0;
       } else {
-        percussion = Math.min(0.92, percussion * 0.88 + intensity * 0.08);
+        percussion = Math.min(0.88, percussion * 0.88 + intensity * 0.08) *
+          (0.6 + analysisConfidence * 0.4);
+      }
+      if (!isAudible) {
+        vocalStrength = 0;
+        percussion = 0;
       }
 
       var seconds = now * 0.001;

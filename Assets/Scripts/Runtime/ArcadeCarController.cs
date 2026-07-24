@@ -10,10 +10,7 @@ namespace MusicRoad
         private Rigidbody body;
         private RoadGenerator road;
         private Transform[] nitroFlames;
-        private Vector3 safePosition;
-        private Quaternion safeRotation;
         private float offRoadTime;
-        private float safePointTimer;
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
@@ -61,8 +58,6 @@ namespace MusicRoad
         public void PlaceAtStart()
         {
             transform.SetPositionAndRotation(road.GetStartPosition(), road.GetStartRotation());
-            safePosition = transform.position;
-            safeRotation = transform.rotation;
             body.position = transform.position;
             body.rotation = transform.rotation;
         }
@@ -85,8 +80,8 @@ namespace MusicRoad
             UpdateNitroFlames();
 
             grounded = Physics.Raycast(transform.position + transform.up * 0.25f, -transform.up, out RaycastHit hit, 1.4f);
-            road.TryGetRoadInfo(transform.position, out Vector3 roadPoint, out Vector3 roadTangent, out float lateralDistance);
-            onRoad = lateralDistance <= RoadGenerator.RoadHalfWidth + 0.35f;
+            bool nearGeneratedRoad = road.TryGetRoadInfo(transform.position, out Vector3 roadPoint, out Vector3 roadTangent, out float lateralDistance);
+            onRoad = nearGeneratedRoad && lateralDistance <= RoadGenerator.RoadHalfWidth + 0.35f;
 
             if (grounded)
             {
@@ -111,7 +106,7 @@ namespace MusicRoad
 
             jumpRequested = false;
             wasBoosting = boosting;
-            UpdateRecovery(roadPoint, roadTangent);
+            UpdateRecovery(roadPoint);
         }
 
         private void ApplySuspensionAndAlignment(RaycastHit hit, Vector3 roadTangent)
@@ -189,18 +184,11 @@ namespace MusicRoad
             }
         }
 
-        private void UpdateRecovery(Vector3 roadPoint, Vector3 roadTangent)
+        private void UpdateRecovery(Vector3 roadPoint)
         {
             if (onRoad && grounded)
             {
                 offRoadTime = 0f;
-                safePointTimer += Time.fixedDeltaTime;
-                if (safePointTimer >= 0.8f)
-                {
-                    safePointTimer = 0f;
-                    safePosition = roadPoint + Vector3.up * 0.9f;
-                    safeRotation = Quaternion.LookRotation(Vector3.ProjectOnPlane(roadTangent, Vector3.up).normalized, Vector3.up);
-                }
             }
             else
             {
@@ -217,8 +205,18 @@ namespace MusicRoad
             offRoadTime = 0f;
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
-            body.position = safePosition;
-            body.rotation = safeRotation;
+            if (road.TryGetClosestRoadPose(transform.position, out Vector3 roadPoint, out Vector3 roadTangent))
+            {
+                Vector3 recoveryPosition = roadPoint + Vector3.up * 1.35f;
+                Quaternion recoveryRotation = Quaternion.LookRotation(roadTangent, Vector3.up);
+                transform.SetPositionAndRotation(recoveryPosition, recoveryRotation);
+                body.position = recoveryPosition;
+                body.rotation = recoveryRotation;
+            }
+            else
+            {
+                PlaceAtStart();
+            }
             RunManager.Instance?.BreakCombo();
         }
     }
