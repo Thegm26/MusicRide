@@ -1,0 +1,8 @@
+{
+  "name": "music-road-listening-lab",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@mediapipe/tasks-audio": "0.10.35"
+  }
+}
