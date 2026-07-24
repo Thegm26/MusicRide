@@ -2,30 +2,419 @@ mergeInto(LibraryManager.library, {
   $MusicRoadCapture: {
     stream: null,
     context: null,
-    analyser: null,
     source: null,
-    frequencyData: null,
-    timeData: null,
-    previousSpectrum: null,
-    animationFrame: 0,
-    lastAnalysisTime: 0,
-    rollingEnergy: 0.05,
-    rollingFlux: 0.002,
-    rollingBass: 0.03,
-    rollingVocal: 0.03,
-    rollingTreble: 0.02,
-    levelHistory: [],
-    historyIndex: 0,
-    windowFloor: 0.01,
-    windowCeiling: 0.16,
-    windowUpdateCounter: 0,
-    lastAudibleTime: 0,
-    resetWindowOnNextSignal: false,
-    windowReadySent: false,
-    lastBeatTime: 0,
+    analyzer: null,
+    loadingAnalyzer: false,
+    analyzerCallbacks: [],
     captureStartedAt: 0,
     signalDetected: false,
     silentWarningSent: false,
+    lastAudibleTime: 0,
+    resetOnNextSignal: false,
+    frames: [],
+    previous: null,
+    onsetTimes: [],
+    sectionEnergy: 0,
+    lastBeatTime: 0,
+    profileReadySent: false,
+    bufferSize: 2048,
+    profileSeconds: 60,
+
+    clamp: function (value) {
+      value = Number.isFinite(value) ? value : 0;
+      return Math.max(0, Math.min(1, value));
+    },
+
+    mean: function (values) {
+      if (!values || !values.length) {
+        return 0;
+      }
+      var sum = 0;
+      for (var i = 0; i < values.length; i++) {
+        sum += values[i];
+      }
+      return sum / values.length;
+    },
+
+    percentile: function (values, amount) {
+      if (!values.length) {
+        return 0;
+      }
+      var sorted = values.slice().sort(function (a, b) {
+        return a - b;
+      });
+      return sorted[Math.floor((sorted.length - 1) * amount)];
+    },
+
+    bandMean: function (values, from, to) {
+      if (!values || !values.length) {
+        return 0;
+      }
+      return MusicRoadCapture.mean(values.slice(from, Math.min(to, values.length)));
+    },
+
+    normalized: function (key, value, lowPercentile, highPercentile) {
+      var values = [];
+      for (var i = 0; i < MusicRoadCapture.frames.length; i++) {
+        var candidate = MusicRoadCapture.frames[i][key];
+        if (Number.isFinite(candidate)) {
+          values.push(candidate);
+        }
+      }
+      if (values.length < 24) {
+        var observedMax = Math.max(value, 0.000001);
+        for (var index = 0; index < values.length; index++) {
+          observedMax = Math.max(observedMax, values[index]);
+        }
+        return MusicRoadCapture.clamp(value / (observedMax * 1.2));
+      }
+      var floor = MusicRoadCapture.percentile(values, lowPercentile);
+      var ceiling = Math.max(
+        floor + 0.000001,
+        MusicRoadCapture.percentile(values, highPercentile)
+      );
+      return MusicRoadCapture.clamp((value - floor) / (ceiling - floor));
+    },
+
+    chromaDistance: function (current, prior) {
+      if (!current || !prior || !current.length || !prior.length) {
+        return 0;
+      }
+      var dot = 0;
+      var currentLength = 0;
+      var priorLength = 0;
+      var count = Math.min(current.length, prior.length);
+      for (var i = 0; i < count; i++) {
+        dot += current[i] * prior[i];
+        currentLength += current[i] * current[i];
+        priorLength += prior[i] * prior[i];
+      }
+      return 1 - dot / Math.max(0.000001, Math.sqrt(currentLength * priorLength));
+    },
+
+    positiveSpectralFlux: function (current, prior) {
+      if (!current || !prior || !current.length || !prior.length) {
+        return 0;
+      }
+      var flux = 0;
+      var count = Math.min(current.length, prior.length);
+      for (var i = 0; i < count; i++) {
+        flux += Math.max(0, current[i] - prior[i]);
+      }
+      return flux / Math.max(1, count);
+    },
+
+    estimateRhythm: function (now, onset) {
+      var triggered =
+        onset > 0.68 &&
+        (!MusicRoadCapture.onsetTimes.length ||
+          now - MusicRoadCapture.onsetTimes[MusicRoadCapture.onsetTimes.length - 1] > 170);
+      if (triggered) {
+        MusicRoadCapture.onsetTimes.push(now);
+      }
+      while (
+        MusicRoadCapture.onsetTimes.length &&
+        now - MusicRoadCapture.onsetTimes[0] > 12000
+      ) {
+        MusicRoadCapture.onsetTimes.shift();
+      }
+
+      var recentCount = 0;
+      for (var i = 0; i < MusicRoadCapture.onsetTimes.length; i++) {
+        if (now - MusicRoadCapture.onsetTimes[i] <= 4000) {
+          recentCount++;
+        }
+      }
+      var density = MusicRoadCapture.clamp(recentCount / 9);
+      if (MusicRoadCapture.onsetTimes.length < 4) {
+        return { bpm: 0, confidence: 0, density: density, triggered: triggered };
+      }
+
+      var intervals = [];
+      for (var index = 1; index < MusicRoadCapture.onsetTimes.length; index++) {
+        var interval =
+          MusicRoadCapture.onsetTimes[index] -
+          MusicRoadCapture.onsetTimes[index - 1];
+        while (interval < 333) {
+          interval *= 2;
+        }
+        while (interval > 1000) {
+          interval /= 2;
+        }
+        intervals.push(interval);
+      }
+      var typical = MusicRoadCapture.percentile(intervals, 0.5);
+      var deviations = intervals.map(function (interval) {
+        return Math.abs(interval - typical);
+      });
+      var consistency =
+        1 -
+        MusicRoadCapture.clamp(
+          MusicRoadCapture.percentile(deviations, 0.5) /
+            Math.max(1, typical) /
+            0.24
+        );
+      return {
+        bpm: Math.round(60000 / Math.max(1, typical)),
+        confidence: MusicRoadCapture.clamp(
+          consistency * Math.min(1, intervals.length / 8)
+        ),
+        density: density,
+        triggered: triggered,
+      };
+    },
+
+    remember: function (frame) {
+      MusicRoadCapture.frames.push(frame);
+      var framesPerSecond =
+        MusicRoadCapture.context.sampleRate / MusicRoadCapture.bufferSize;
+      var capacity = Math.ceil(MusicRoadCapture.profileSeconds * framesPerSecond);
+      if (MusicRoadCapture.frames.length > capacity) {
+        MusicRoadCapture.frames.shift();
+      }
+    },
+
+    resetProfile: function () {
+      MusicRoadCapture.frames = [];
+      MusicRoadCapture.previous = null;
+      MusicRoadCapture.onsetTimes = [];
+      MusicRoadCapture.sectionEnergy = 0;
+      MusicRoadCapture.lastBeatTime = 0;
+      MusicRoadCapture.profileReadySent = false;
+    },
+
+    onFeatures: function (features) {
+      if (!MusicRoadCapture.context) {
+        return;
+      }
+
+      var now = performance.now();
+      var rawLevel = features.rms || 0;
+      var audible = rawLevel > 0.004;
+      if (audible && MusicRoadCapture.resetOnNextSignal) {
+        MusicRoadCapture.resetProfile();
+        MusicRoadCapture.resetOnNextSignal = false;
+        MusicRoadCapture.sendState(
+          "Active",
+          "LIVE \u2022 NEW SONG DETECTED \u2022 building a fresh 60-second profile."
+        );
+      }
+      if (audible) {
+        MusicRoadCapture.lastAudibleTime = now;
+      } else if (
+        MusicRoadCapture.lastAudibleTime > 0 &&
+        now - MusicRoadCapture.lastAudibleTime > 4000
+      ) {
+        MusicRoadCapture.resetOnNextSignal = true;
+      }
+
+      if (!MusicRoadCapture.signalDetected && audible) {
+        MusicRoadCapture.signalDetected = true;
+        MusicRoadCapture.sendState(
+          "Active",
+          "LIVE COMPUTER AUDIO \u2022 analyzing rhythm, timbre, impacts, and sections."
+        );
+      } else if (
+        !MusicRoadCapture.signalDetected &&
+        !MusicRoadCapture.silentWarningSent &&
+        now - MusicRoadCapture.captureStartedAt > 3000
+      ) {
+        MusicRoadCapture.silentWarningSent = true;
+        MusicRoadCapture.sendState(
+          "Active",
+          "CONNECTED, BUT NO SOUND \u2022 enable Share system audio or share the music tab."
+        );
+      }
+
+      var bark = features.loudness ? features.loudness.specific : [];
+      var perceivedLoudness = features.loudness ? features.loudness.total : 0;
+      var lowBand = MusicRoadCapture.bandMean(bark, 0, 7);
+      var midBand = MusicRoadCapture.bandMean(bark, 6, 17);
+      var highBand = MusicRoadCapture.bandMean(bark, 16, 24);
+      var prior = MusicRoadCapture.previous;
+      var flux = MusicRoadCapture.positiveSpectralFlux(
+        features.amplitudeSpectrum,
+        prior ? prior.amplitudeSpectrum : null
+      );
+      var loudRise = Math.max(
+        0,
+        perceivedLoudness - (prior ? prior.perceivedLoudness : perceivedLoudness)
+      );
+      var lowRise = Math.max(0, lowBand - (prior ? prior.lowBand : lowBand));
+      var midRise = Math.max(0, midBand - (prior ? prior.midBand : midBand));
+      var highRise = Math.max(0, highBand - (prior ? prior.highBand : highBand));
+      var harmonicMotion = MusicRoadCapture.chromaDistance(
+        features.chroma,
+        prior ? prior.chroma : null
+      );
+
+      var energy = 0;
+      var onset = 0;
+      var lowImpact = 0;
+      var highImpact = 0;
+      var vocalLift = 0;
+      var fullness = 0;
+      var tonality = 0;
+      var harmonicChange = 0;
+      var sectionLift = 0;
+      var rhythm = { bpm: 0, confidence: 0, density: 0, triggered: false };
+
+      if (audible) {
+        energy = MusicRoadCapture.normalized(
+          "perceivedLoudness",
+          perceivedLoudness,
+          0.12,
+          0.94
+        );
+        var fluxRise = MusicRoadCapture.normalized("flux", flux, 0.25, 0.97);
+        var volumeAttack = MusicRoadCapture.normalized(
+          "loudRise",
+          loudRise,
+          0.35,
+          0.97
+        );
+        onset = MusicRoadCapture.clamp(fluxRise * 0.58 + volumeAttack * 0.42);
+        lowImpact = MusicRoadCapture.clamp(
+          MusicRoadCapture.normalized("lowRise", lowRise, 0.35, 0.97) * 0.7 +
+            onset * 0.3
+        );
+        highImpact = MusicRoadCapture.clamp(
+          MusicRoadCapture.normalized("highRise", highRise, 0.35, 0.97) * 0.7 +
+            onset * 0.3
+        );
+        fullness = MusicRoadCapture.clamp(features.perceptualSpread || 0);
+        var flatness = MusicRoadCapture.clamp(features.spectralFlatness || 0);
+        var chroma = features.chroma || [];
+        var chromaMean = MusicRoadCapture.mean(chroma);
+        var chromaPeak = 0;
+        for (var chromaIndex = 0; chromaIndex < chroma.length; chromaIndex++) {
+          chromaPeak = Math.max(chromaPeak, chroma[chromaIndex]);
+        }
+        var chromaFocus = MusicRoadCapture.clamp(
+          (chromaPeak / Math.max(0.001, chromaMean) - 1) / 3
+        );
+        tonality = MusicRoadCapture.clamp(
+          (1 - Math.sqrt(flatness)) * 0.72 + chromaFocus * 0.28
+        );
+        harmonicChange = MusicRoadCapture.normalized(
+          "harmonicMotion",
+          harmonicMotion,
+          0.2,
+          0.95
+        );
+        vocalLift = MusicRoadCapture.clamp(
+          MusicRoadCapture.normalized("midRise", midRise, 0.3, 0.97) *
+            (0.55 + tonality * 0.45)
+        );
+        rhythm = MusicRoadCapture.estimateRhythm(now, onset);
+        MusicRoadCapture.sectionEnergy =
+          MusicRoadCapture.sectionEnergy * 0.965 + energy * 0.035;
+        sectionLift = MusicRoadCapture.clamp(
+          MusicRoadCapture.sectionEnergy * 0.48 +
+            fullness * 0.2 +
+            rhythm.density * 0.17 +
+            harmonicChange * 0.15
+        );
+      } else {
+        MusicRoadCapture.sectionEnergy *= 0.98;
+      }
+
+      var profileDuration =
+        (MusicRoadCapture.frames.length * MusicRoadCapture.bufferSize) /
+        Math.max(1, MusicRoadCapture.context.sampleRate);
+      var calibrationConfidence = MusicRoadCapture.clamp(
+        (profileDuration - 8) / 52
+      );
+      var rawHeavy = MusicRoadCapture.clamp(
+        sectionLift * 0.5 +
+          onset * 0.2 +
+          vocalLift * 0.14 +
+          Math.max(lowImpact, highImpact) * 0.1 +
+          harmonicChange * 0.06
+      );
+      var heavy = audible
+        ? Math.min(0.55 + calibrationConfidence * 0.45, rawHeavy)
+        : 0;
+      var centroidHz =
+        ((features.spectralCentroid || 0) *
+          MusicRoadCapture.context.sampleRate) /
+        MusicRoadCapture.bufferSize;
+      var brightness = MusicRoadCapture.clamp(centroidHz / 8000);
+      var beat =
+        rhythm.triggered && now - MusicRoadCapture.lastBeatTime > 170
+          ? onset
+          : 0;
+      if (beat > 0) {
+        MusicRoadCapture.lastBeatTime = now;
+      }
+
+      if (audible) {
+        MusicRoadCapture.remember({
+          perceivedLoudness: perceivedLoudness,
+          flux: flux,
+          loudRise: loudRise,
+          lowRise: lowRise,
+          midRise: midRise,
+          highRise: highRise,
+          harmonicMotion: harmonicMotion,
+          energy: energy,
+        });
+      }
+      MusicRoadCapture.previous = {
+        perceivedLoudness: perceivedLoudness,
+        lowBand: lowBand,
+        midBand: midBand,
+        highBand: highBand,
+        chroma: features.chroma,
+        amplitudeSpectrum: features.amplitudeSpectrum,
+      };
+
+      if (
+        !MusicRoadCapture.profileReadySent &&
+        profileDuration >= MusicRoadCapture.profileSeconds
+      ) {
+        MusicRoadCapture.profileReadySent = true;
+        MusicRoadCapture.sendState(
+          "Active",
+          "LIVE SONG PROFILE READY \u2022 reactions use rolling 60-second statistics."
+        );
+      }
+
+      SendMessage(
+        "AudioCaptureService",
+        "OnAudioFeatures",
+        JSON.stringify({
+          timestamp: now * 0.001,
+          rms: audible ? energy : 0,
+          rawLevel: rawLevel,
+          perceivedLoudness: perceivedLoudness,
+          intensity: energy,
+          energy: energy,
+          vocal: vocalLift,
+          vocalLift: vocalLift,
+          percussion: onset,
+          bass: lowImpact,
+          mid: vocalLift,
+          treble: highImpact,
+          brightness: brightness,
+          onset: onset,
+          beat: beat,
+          lowImpact: lowImpact,
+          highImpact: highImpact,
+          fullness: fullness,
+          sharpness: MusicRoadCapture.clamp(features.perceptualSharpness || 0),
+          tonality: tonality,
+          harmonicChange: harmonicChange,
+          sectionLift: sectionLift,
+          beatDensity: rhythm.density,
+          beatConfidence: rhythm.confidence,
+          bpm: rhythm.bpm,
+          heavy: heavy,
+          calibrationConfidence: calibrationConfidence,
+          profileSeconds: profileDuration,
+        })
+      );
+    },
 
     focusGame: function () {
       try {
@@ -38,348 +427,122 @@ mergeInto(LibraryManager.library, {
       } catch (_) {}
     },
 
-    updateSongWindow: function (level) {
-      var capacity = 800;
-      if (MusicRoadCapture.levelHistory.length < capacity) {
-        MusicRoadCapture.levelHistory.push(level);
-      } else {
-        MusicRoadCapture.levelHistory[MusicRoadCapture.historyIndex] = level;
-        MusicRoadCapture.historyIndex =
-          (MusicRoadCapture.historyIndex + 1) % capacity;
-      }
+    sendState: function (state, message) {
+      SendMessage(
+        "AudioCaptureService",
+        "OnCaptureState",
+        state + "|" + (message || "")
+      );
+    },
 
-      MusicRoadCapture.windowUpdateCounter++;
-      if (
-        MusicRoadCapture.windowUpdateCounter < 8 ||
-        MusicRoadCapture.levelHistory.length < 12
-      ) {
+    loadAnalyzer: function (callback) {
+      if (window.Meyda) {
+        callback(true);
         return;
       }
-      MusicRoadCapture.windowUpdateCounter = 0;
+      MusicRoadCapture.analyzerCallbacks.push(callback);
+      if (MusicRoadCapture.loadingAnalyzer) {
+        return;
+      }
+      MusicRoadCapture.loadingAnalyzer = true;
+      var script = document.createElement("script");
+      var base = Module.streamingAssetsUrl || "StreamingAssets";
+      script.src = base + "/MusicRoad/meyda.min.js";
+      script.onload = function () {
+        MusicRoadCapture.loadingAnalyzer = false;
+        var callbacks = MusicRoadCapture.analyzerCallbacks.slice();
+        MusicRoadCapture.analyzerCallbacks = [];
+        for (var i = 0; i < callbacks.length; i++) {
+          callbacks[i](!!window.Meyda);
+        }
+      };
+      script.onerror = function () {
+        MusicRoadCapture.loadingAnalyzer = false;
+        var callbacks = MusicRoadCapture.analyzerCallbacks.slice();
+        MusicRoadCapture.analyzerCallbacks = [];
+        for (var i = 0; i < callbacks.length; i++) {
+          callbacks[i](false);
+        }
+      };
+      document.head.appendChild(script);
+    },
 
-      var sorted = MusicRoadCapture.levelHistory.slice().sort(function (a, b) {
-        return a - b;
+    startAnalyzer: function () {
+      if (!window.Meyda || !MusicRoadCapture.context || !MusicRoadCapture.source) {
+        MusicRoadCapture.sendState(
+          "Unsupported",
+          "The local music analyzer could not be loaded."
+        );
+        return;
+      }
+      MusicRoadCapture.resetProfile();
+      MusicRoadCapture.analyzer = Meyda.createMeydaAnalyzer({
+        audioContext: MusicRoadCapture.context,
+        source: MusicRoadCapture.source,
+        bufferSize: MusicRoadCapture.bufferSize,
+        featureExtractors: [
+          "rms",
+          "loudness",
+          "amplitudeSpectrum",
+          "spectralCentroid",
+          "spectralFlatness",
+          "spectralRolloff",
+          "perceptualSpread",
+          "perceptualSharpness",
+          "chroma",
+          "zcr",
+        ],
+        callback: MusicRoadCapture.onFeatures,
       });
-      var floorIndex = Math.floor((sorted.length - 1) * 0.05);
-      var ceilingIndex = Math.floor((sorted.length - 1) * 0.99);
-      var targetFloor = sorted[floorIndex];
-      var targetCeiling = Math.max(targetFloor + 0.028, sorted[ceilingIndex]);
-      MusicRoadCapture.windowFloor =
-        MusicRoadCapture.windowFloor * 0.82 + targetFloor * 0.18;
-      MusicRoadCapture.windowCeiling =
-        MusicRoadCapture.windowCeiling * 0.82 + targetCeiling * 0.18;
-    },
-
-    resetSongWindow: function (level) {
-      MusicRoadCapture.levelHistory = [level];
-      MusicRoadCapture.historyIndex = 0;
-      MusicRoadCapture.windowFloor = Math.max(0.004, level * 0.35);
-      MusicRoadCapture.windowCeiling = Math.max(
-        MusicRoadCapture.windowFloor + 0.028,
-        level * 1.65
+      MusicRoadCapture.analyzer.start();
+      MusicRoadCapture.captureStartedAt = performance.now();
+      MusicRoadCapture.signalDetected = false;
+      MusicRoadCapture.silentWarningSent = false;
+      MusicRoadCapture.sendState(
+        "Active",
+        "COMPUTER AUDIO CONNECTED \u2022 local music analyzer is ready."
       );
-      MusicRoadCapture.windowUpdateCounter = 0;
-      MusicRoadCapture.windowReadySent = false;
-    },
-
-    relativeBand: function (value, rollingValue, intensity) {
-      var ratio = value / Math.max(0.006, rollingValue);
-      var relative = Math.max(0, Math.min(1, (ratio - 0.68) / 1.15));
-      return Math.min(0.92, relative * 0.72 + intensity * 0.28);
-    },
-
-    sendState: function (state, message) {
-      SendMessage("AudioCaptureService", "OnCaptureState", state + "|" + (message || ""));
     },
 
     stop: function (notify) {
-      if (MusicRoadCapture.animationFrame) {
-        cancelAnimationFrame(MusicRoadCapture.animationFrame);
-        MusicRoadCapture.animationFrame = 0;
+      if (MusicRoadCapture.analyzer) {
+        MusicRoadCapture.analyzer.stop();
+        MusicRoadCapture.analyzer = null;
       }
-
       if (MusicRoadCapture.stream) {
         MusicRoadCapture.stream.getTracks().forEach(function (track) {
           track.stop();
         });
         MusicRoadCapture.stream = null;
       }
-
       if (MusicRoadCapture.source) {
         try {
           MusicRoadCapture.source.disconnect();
         } catch (_) {}
         MusicRoadCapture.source = null;
       }
-
       if (MusicRoadCapture.context) {
         MusicRoadCapture.context.close();
         MusicRoadCapture.context = null;
       }
-
-      MusicRoadCapture.analyser = null;
-      MusicRoadCapture.frequencyData = null;
-      MusicRoadCapture.timeData = null;
-      MusicRoadCapture.previousSpectrum = null;
+      MusicRoadCapture.resetProfile();
       MusicRoadCapture.captureStartedAt = 0;
       MusicRoadCapture.signalDetected = false;
       MusicRoadCapture.silentWarningSent = false;
-      MusicRoadCapture.rollingEnergy = 0.05;
-      MusicRoadCapture.rollingFlux = 0.002;
-      MusicRoadCapture.rollingBass = 0.03;
-      MusicRoadCapture.rollingVocal = 0.03;
-      MusicRoadCapture.rollingTreble = 0.02;
-      MusicRoadCapture.levelHistory = [];
-      MusicRoadCapture.historyIndex = 0;
-      MusicRoadCapture.windowFloor = 0.01;
-      MusicRoadCapture.windowCeiling = 0.16;
-      MusicRoadCapture.windowUpdateCounter = 0;
       MusicRoadCapture.lastAudibleTime = 0;
-      MusicRoadCapture.resetWindowOnNextSignal = false;
-      MusicRoadCapture.windowReadySent = false;
-
+      MusicRoadCapture.resetOnNextSignal = false;
       if (notify) {
-        MusicRoadCapture.sendState("Ended", "Music sharing stopped. Click Connect Music to reconnect.");
+        MusicRoadCapture.sendState(
+          "Ended",
+          "Music sharing stopped. Click Connect Music to reconnect."
+        );
       }
     },
+  },
 
-    analyse: function (now) {
-      var analyser = MusicRoadCapture.analyser;
-      if (!analyser) {
-        return;
-      }
-
-      MusicRoadCapture.animationFrame = requestAnimationFrame(MusicRoadCapture.analyse);
-      if (now - MusicRoadCapture.lastAnalysisTime < 75) {
-        return;
-      }
-      MusicRoadCapture.lastAnalysisTime = now;
-
-      var spectrum = MusicRoadCapture.frequencyData;
-      analyser.getByteFrequencyData(spectrum);
-      var waveform = MusicRoadCapture.timeData;
-      analyser.getFloatTimeDomainData(waveform);
-
-      var timeEnergy = 0;
-      for (var sampleIndex = 0; sampleIndex < waveform.length; sampleIndex++) {
-        timeEnergy += waveform[sampleIndex] * waveform[sampleIndex];
-      }
-      var rawLevel = Math.sqrt(timeEnergy / waveform.length);
-
-      var sampleRate = MusicRoadCapture.context.sampleRate;
-      var binHz = sampleRate * 0.5 / spectrum.length;
-      var bass = 0;
-      var bassCount = 0;
-      var mid = 0;
-      var midCount = 0;
-      var treble = 0;
-      var trebleCount = 0;
-      var vocal = 0;
-      var vocalCount = 0;
-      var total = 0;
-      var weighted = 0;
-      var flux = 0;
-
-      for (var i = 1; i < spectrum.length; i++) {
-        var value = spectrum[i] / 255;
-        var hz = i * binHz;
-        total += value;
-        weighted += value * hz;
-        flux += Math.max(0, value - MusicRoadCapture.previousSpectrum[i]);
-        MusicRoadCapture.previousSpectrum[i] = value;
-
-        if (hz < 250) {
-          bass += value;
-          bassCount++;
-        } else if (hz < 2500) {
-          mid += value;
-          midCount++;
-        } else if (hz < 12000) {
-          treble += value;
-          trebleCount++;
-        }
-
-        if (hz >= 250 && hz < 4200) {
-          vocal += value;
-          vocalCount++;
-        }
-      }
-
-      bass = bassCount ? bass / bassCount : 0;
-      mid = midCount ? mid / midCount : 0;
-      treble = trebleCount ? treble / trebleCount : 0;
-      vocal = vocalCount ? vocal / vocalCount : 0;
-      var brightness = total > 0.001 ? Math.min(1, weighted / total / 9000) : 0;
-      var fluxLevel = flux / spectrum.length;
-
-      if (!MusicRoadCapture.signalDetected && rawLevel > 0.006) {
-        MusicRoadCapture.signalDetected = true;
-        MusicRoadCapture.sendState(
-          "Active",
-          "LIVE COMPUTER AUDIO DETECTED \u2022 calibrating this song for about 20 seconds."
-        );
-      } else if (
-        !MusicRoadCapture.signalDetected &&
-        !MusicRoadCapture.silentWarningSent &&
-        now - MusicRoadCapture.captureStartedAt > 3000
-      ) {
-        MusicRoadCapture.silentWarningSent = true;
-        MusicRoadCapture.sendState(
-          "Active",
-          "CONNECTED, BUT NO SOUND \u2022 enable Share system audio or share the tab playing music."
-        );
-      }
-
-      var isAudible = rawLevel > 0.004;
-      var songRestarted = false;
-      if (isAudible) {
-        if (MusicRoadCapture.resetWindowOnNextSignal) {
-          MusicRoadCapture.resetSongWindow(rawLevel);
-          MusicRoadCapture.resetWindowOnNextSignal = false;
-          songRestarted = true;
-          MusicRoadCapture.sendState(
-            "Active",
-            "LIVE \u2022 NEW SONG DETECTED \u2022 recalibrating for about 20 seconds."
-          );
-        } else {
-          MusicRoadCapture.updateSongWindow(rawLevel);
-        }
-        MusicRoadCapture.lastAudibleTime = now;
-      } else if (
-        MusicRoadCapture.lastAudibleTime > 0 &&
-        now - MusicRoadCapture.lastAudibleTime > 4000
-      ) {
-        MusicRoadCapture.resetWindowOnNextSignal = true;
-      }
-
-      var sampleCount = MusicRoadCapture.levelHistory.length;
-      var analysisConfidence = Math.max(
-        0,
-        Math.min(1, (sampleCount - 240) / 160)
-      );
-      var conservativeIntensity = Math.min(
-        0.48,
-        rawLevel / (rawLevel + 0.16) * 0.62
-      );
-      var intensity = conservativeIntensity;
-      if (sampleCount >= 240) {
-        var windowRange = Math.max(
-          0.028,
-          MusicRoadCapture.windowCeiling - MusicRoadCapture.windowFloor
-        );
-        var windowPosition = Math.max(
-          0,
-          Math.min(
-            1,
-            (rawLevel - MusicRoadCapture.windowFloor) / windowRange
-          )
-        );
-        var constrainedPosition = Math.pow(windowPosition, 1.7);
-        var exceptionalPeak = Math.max(
-          0,
-          Math.min(
-            1,
-            (rawLevel - MusicRoadCapture.windowCeiling) /
-              (windowRange * 0.4)
-          )
-        );
-        var normalizedIntensity = Math.min(
-          0.88,
-          0.04 + constrainedPosition * 0.65 + exceptionalPeak * 0.18
-        );
-        intensity =
-          conservativeIntensity * (1 - analysisConfidence) +
-          normalizedIntensity * analysisConfidence;
-        if (!MusicRoadCapture.windowReadySent) {
-          MusicRoadCapture.windowReadySent = true;
-          MusicRoadCapture.sendState(
-            "Active",
-            "LIVE SONG PROFILE READY \u2022 reacting from audible 60-second statistics."
-          );
-        }
-      }
-
-      if (songRestarted) {
-        MusicRoadCapture.rollingEnergy = rawLevel;
-        MusicRoadCapture.rollingBass = bass;
-        MusicRoadCapture.rollingVocal = vocal;
-        MusicRoadCapture.rollingTreble = treble;
-        MusicRoadCapture.rollingFlux = Math.max(0.001, fluxLevel);
-      } else if (isAudible) {
-        MusicRoadCapture.rollingEnergy =
-          MusicRoadCapture.rollingEnergy * 0.96 + rawLevel * 0.04;
-        MusicRoadCapture.rollingBass =
-          MusicRoadCapture.rollingBass * 0.96 + bass * 0.04;
-        MusicRoadCapture.rollingVocal =
-          MusicRoadCapture.rollingVocal * 0.96 + vocal * 0.04;
-        MusicRoadCapture.rollingTreble =
-          MusicRoadCapture.rollingTreble * 0.96 + treble * 0.04;
-        MusicRoadCapture.rollingFlux =
-          MusicRoadCapture.rollingFlux * 0.92 + fluxLevel * 0.08;
-      }
-
-      var vocalRatio = vocal / Math.max(0.006, MusicRoadCapture.rollingVocal);
-      var vocalRise = Math.max(0, Math.min(1, (vocalRatio - 0.82) / 1.32));
-      var vocalStrength = Math.min(
-        0.86,
-        vocalRise * 0.72 + intensity * 0.22
-      ) * (0.55 + analysisConfidence * 0.45);
-      var hitRatio =
-        fluxLevel / Math.max(0.0015, MusicRoadCapture.rollingFlux);
-      var transientHit = Math.max(
-        0,
-        Math.min(1, (hitRatio - 0.88) / 1.3)
-      );
-      if (fluxLevel < MusicRoadCapture.rollingFlux * 0.95) {
-        transientHit = 0;
-      }
-      var percussion = Math.min(
-        0.92,
-        transientHit * 0.88 + intensity * 0.08
-      ) * (0.72 + analysisConfidence * 0.28);
-      if (!isAudible) {
-        vocalStrength = 0;
-        transientHit = 0;
-        percussion = 0;
-      }
-
-      var seconds = now * 0.001;
-      var beat =
-        transientHit > 0.48 &&
-        seconds - MusicRoadCapture.lastBeatTime > 0.18
-          ? Math.max(percussion, Math.min(0.95, transientHit * 0.95))
-          : 0;
-
-      if (beat > 0) {
-        MusicRoadCapture.lastBeatTime = seconds;
-      }
-
-      SendMessage(
-        "AudioCaptureService",
-        "OnAudioFeatures",
-        JSON.stringify({
-          timestamp: seconds,
-          rms: intensity,
-          intensity: intensity,
-          vocal: vocalStrength,
-          percussion: percussion,
-          bass: MusicRoadCapture.relativeBand(
-            bass,
-            MusicRoadCapture.rollingBass,
-            intensity
-          ),
-          mid: vocalStrength,
-          treble: MusicRoadCapture.relativeBand(
-            treble,
-            MusicRoadCapture.rollingTreble,
-            intensity
-          ),
-          brightness: Math.min(0.88, 0.08 + brightness * 0.78),
-          onset: transientHit,
-          beat: beat,
-        })
-      );
-    },
+  MusicRoad_PrepareCapture__deps: ["$MusicRoadCapture"],
+  MusicRoad_PrepareCapture: function () {
+    MusicRoadCapture.loadAnalyzer(function () {});
   },
 
   MusicRoad_StartCapture__deps: ["$MusicRoadCapture"],
@@ -393,6 +556,17 @@ mergeInto(LibraryManager.library, {
     }
 
     MusicRoadCapture.stop(false);
+    MusicRoadCapture.loadAnalyzer(function (ready) {
+      if (
+        ready &&
+        MusicRoadCapture.context &&
+        MusicRoadCapture.source &&
+        !MusicRoadCapture.analyzer
+      ) {
+        MusicRoadCapture.startAnalyzer();
+      }
+    });
+
     var captureOptions = {
       video: { frameRate: { ideal: 1, max: 5 } },
       audio: { suppressLocalAudioPlayback: false },
@@ -427,7 +601,7 @@ mergeInto(LibraryManager.library, {
           });
           MusicRoadCapture.sendState(
             "NoAudio",
-            "No audio was shared. Reconnect and enable Share audio in the browser dialog."
+            "No audio was shared. Reconnect and enable Share audio."
           );
           return;
         }
@@ -441,22 +615,6 @@ mergeInto(LibraryManager.library, {
         MusicRoadCapture.context.resume().catch(function () {});
         MusicRoadCapture.source =
           MusicRoadCapture.context.createMediaStreamSource(MusicRoadCapture.stream);
-        MusicRoadCapture.analyser = MusicRoadCapture.context.createAnalyser();
-        MusicRoadCapture.analyser.fftSize = 1024;
-        MusicRoadCapture.analyser.smoothingTimeConstant = 0.68;
-        MusicRoadCapture.frequencyData = new Uint8Array(
-          MusicRoadCapture.analyser.frequencyBinCount
-        );
-        MusicRoadCapture.timeData = new Float32Array(
-          MusicRoadCapture.analyser.fftSize
-        );
-        MusicRoadCapture.previousSpectrum = new Float32Array(
-          MusicRoadCapture.analyser.frequencyBinCount
-        );
-        MusicRoadCapture.source.connect(MusicRoadCapture.analyser);
-        MusicRoadCapture.captureStartedAt = performance.now();
-        MusicRoadCapture.signalDetected = false;
-        MusicRoadCapture.silentWarningSent = false;
 
         audioTracks.forEach(function (track) {
           track.addEventListener("ended", function () {
@@ -464,13 +622,14 @@ mergeInto(LibraryManager.library, {
           });
         });
 
-        MusicRoadCapture.sendState(
-          "Active",
-          "COMPUTER AUDIO CONNECTED \u2022 waiting for sound..."
-        );
-        MusicRoadCapture.animationFrame = requestAnimationFrame(
-          MusicRoadCapture.analyse
-        );
+        if (window.Meyda) {
+          MusicRoadCapture.startAnalyzer();
+        } else {
+          MusicRoadCapture.sendState(
+            "Requesting",
+            "Audio connected \u2022 loading the local analyzer..."
+          );
+        }
       })
       .catch(function (error) {
         var message =

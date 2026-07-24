@@ -85,6 +85,8 @@ namespace MusicRoad
             CreateCamera(carObject.transform, world);
             MusicPeakWind wind = new GameObject("Maximum Music Wind").AddComponent<MusicPeakWind>();
             wind.Initialize(world, carObject.transform, windMaterial);
+            MusicWeather weather = new GameObject("Music Weather").AddComponent<MusicWeather>();
+            weather.Initialize(world, carObject.transform);
 
             RunManager run = new GameObject("Run Manager").AddComponent<RunManager>();
             run.Initialize(capture, car);
@@ -346,7 +348,7 @@ namespace MusicRoad
             Camera camera = cameraObject.AddComponent<Camera>();
             camera.fieldOfView = 60f;
             camera.nearClipPlane = 0.15f;
-            camera.farClipPlane = 230f;
+            camera.farClipPlane = 110f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.16f, 0.22f, 0.34f);
             cameraObject.AddComponent<AudioListener>();

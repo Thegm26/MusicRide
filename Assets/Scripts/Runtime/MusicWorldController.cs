@@ -20,6 +20,7 @@ namespace MusicRoad
         public AudioFeatureFrame Immediate => smoothed;
         public AudioFeatureFrame Delayed => delayed;
         public float BeatPulse => beatPulse;
+        public float Climax => smoothed.heavy;
         public Color AccentColor { get; private set; } = new Color(0.15f, 0.9f, 1f);
 
         private struct TimedFrame
@@ -44,7 +45,7 @@ namespace MusicRoad
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.012f;
+            RenderSettings.fogDensity = 0.019f;
 
             GameObject beatLightObject = new GameObject("Music Beat Flash");
             beatLightObject.transform.SetParent(transform, false);
@@ -68,8 +69,8 @@ namespace MusicRoad
 
             float blend = 1f - Mathf.Exp(-Time.unscaledDeltaTime * 4.5f);
             smoothed = AudioFeatureFrame.Lerp(smoothed, target, blend);
-            float hit = Mathf.Max(target.beat, target.percussion * 0.9f);
-            beatPulse = Mathf.Max(Mathf.Clamp01(hit * 1.15f), beatPulse - Time.unscaledDeltaTime * 4.2f);
+            float hit = Mathf.Max(target.beat, target.onset * 0.92f);
+            beatPulse = Mathf.Max(Mathf.Clamp01(hit * 1.12f), beatPulse - Time.unscaledDeltaTime * 5.8f);
 
             if (capture == null || capture.State != AudioCaptureState.Active)
             {
@@ -92,62 +93,62 @@ namespace MusicRoad
 
         private void ApplyPresentation()
         {
-            float energy = Mathf.Clamp01(smoothed.intensity * 1.35f);
-            float vocal = Mathf.Clamp01(smoothed.vocal * 1.45f);
-            float percussion = Mathf.Clamp01(Mathf.Max(smoothed.percussion, beatPulse));
-            float brightness = Mathf.Clamp01(smoothed.brightness * 1.35f);
-            float paletteStep = Mathf.Floor((brightness * 4f + vocal * 4f) % 6f) / 6f;
-            float hue = Mathf.Repeat(0.55f + paletteStep + vocal * 0.28f, 1f);
-            Color spectral = Color.HSVToRGB(hue, 0.88f, Mathf.Lerp(0.35f, 1f, energy));
-            Color opposite = Color.HSVToRGB(Mathf.Repeat(hue + 0.5f, 1f), 0.92f, 1f);
-            Color sky = Color.Lerp(spectral * 0.25f, opposite, vocal * 0.88f);
-            sky = Color.Lerp(sky, Color.white, beatPulse * 0.88f);
-            AccentColor = Color.Lerp(spectral, opposite, percussion);
+            float energy = Mathf.Clamp01(smoothed.energy);
+            float section = Mathf.Clamp01(smoothed.sectionLift);
+            float vocalLift = Mathf.Clamp01(smoothed.vocalLift);
+            float impact = Mathf.Clamp01(Mathf.Max(smoothed.onset, beatPulse));
+            float harmonicChange = Mathf.Clamp01(smoothed.harmonicChange);
+            float brightness = Mathf.Clamp01(smoothed.brightness);
+            float hue = Mathf.Lerp(0.58f, 0.08f, brightness);
+            Color spectral = Color.HSVToRGB(hue, 0.82f, 1f);
+            Color opposite = Color.HSVToRGB(Mathf.Repeat(hue + 0.5f, 1f), 0.72f, 1f);
+            Color sky = Color.Lerp(new Color(0.12f, 0.24f, 0.38f), new Color(0.48f, 0.7f, 0.9f), section);
+            AccentColor = Color.Lerp(spectral, opposite, harmonicChange);
 
             Camera camera = Camera.main;
             if (camera != null)
             {
-                float skySpeed = 3.5f + vocal * 8f + percussion * 22f;
-                camera.backgroundColor = Color.Lerp(camera.backgroundColor, sky, Time.unscaledDeltaTime * skySpeed);
+                camera.backgroundColor = Color.Lerp(camera.backgroundColor, sky, Time.unscaledDeltaTime * 1.8f);
             }
 
-            RenderSettings.fogColor = Color.Lerp(RenderSettings.fogColor, opposite * 0.48f, Time.unscaledDeltaTime * 5f);
-            float baseFogDensity = Mathf.Lerp(0.016f, 0.0065f, Mathf.Max(energy, vocal));
-            RenderSettings.fogDensity = baseFogDensity * Mathf.Lerp(1f, 0.42f, beatPulse);
-            Color ambient = Color.Lerp(new Color(0.025f, 0.03f, 0.06f), spectral * 1.25f, energy * 0.6f + vocal * 0.4f);
-            RenderSettings.ambientLight = Color.Lerp(ambient, Color.white * 1.35f, beatPulse * 0.72f);
+            Color fogTarget = Color.Lerp(new Color(0.14f, 0.2f, 0.27f), sky, 0.72f);
+            RenderSettings.fogColor = Color.Lerp(RenderSettings.fogColor, fogTarget, Time.unscaledDeltaTime * 1.4f);
+            RenderSettings.fogDensity = Mathf.Lerp(0.022f, 0.015f, section);
+            Color ambient = Color.Lerp(new Color(0.42f, 0.46f, 0.5f), new Color(0.72f, 0.78f, 0.84f), section);
+            RenderSettings.ambientLight = Color.Lerp(RenderSettings.ambientLight, ambient, Time.unscaledDeltaTime * 2f);
 
             if (sun != null)
             {
-                sun.intensity = 0.12f + energy * 1.9f + vocal * 3.2f + percussion * 3.8f + beatPulse * 7f;
-                sun.color = Color.Lerp(Color.Lerp(spectral, opposite, vocal), Color.white, beatPulse * 0.82f);
-                sun.transform.rotation = Quaternion.Euler(18f + vocal * 68f, -90f + brightness * 180f, percussion * 18f);
+                float sunTarget = 0.82f + section * 1.15f + energy * 0.3f + impact * 0.48f;
+                sun.intensity = Mathf.Lerp(sun.intensity, sunTarget, Time.unscaledDeltaTime * (impact > 0.7f ? 10f : 2f));
+                sun.color = Color.Lerp(new Color(1f, 0.93f, 0.82f), Color.white, impact * 0.5f);
+                sun.transform.rotation = Quaternion.Euler(42f + section * 12f, -35f + harmonicChange * 30f, 0f);
             }
 
             if (beatLight != null && camera != null)
             {
                 beatLight.transform.position = camera.transform.position + camera.transform.forward * 11f + Vector3.up * 2f;
-                beatLight.color = opposite;
-                beatLight.intensity = vocal * 8f + percussion * 20f + beatPulse * 46f;
-                beatLight.range = 28f + energy * 34f + beatPulse * 34f;
+                beatLight.color = AccentColor;
+                beatLight.intensity = beatPulse * 34f + vocalLift * 4f;
+                beatLight.range = 25f + section * 18f + beatPulse * 24f;
             }
 
             if (edgeMaterial != null)
             {
                 edgeMaterial.color = Color.Lerp(
-                    Color.Lerp(Color.white, AccentColor, 0.18f + vocal * 0.32f),
+                    Color.Lerp(Color.white, AccentColor, 0.2f + harmonicChange * 0.45f),
                     Color.white,
                     beatPulse);
                 edgeMaterial.SetColor(
                     "_EmissionColor",
-                    AccentColor * (0.2f + vocal * 0.75f + percussion * 1.4f + beatPulse * 8f));
+                    AccentColor * (0.35f + section * 1.2f + vocalLift * 1.5f + beatPulse * 7f));
             }
 
             if (environmentMaterial != null)
             {
                 Color foliage = new Color(0.08f, 0.34f, 0.14f);
-                environmentMaterial.color = Color.Lerp(foliage, AccentColor, beatPulse * 0.72f);
-                environmentMaterial.SetColor("_EmissionColor", AccentColor * (beatPulse * 4.5f));
+                environmentMaterial.color = foliage;
+                environmentMaterial.SetColor("_EmissionColor", foliage * (0.08f + section * 0.12f));
             }
         }
 
@@ -160,14 +161,28 @@ namespace MusicRoad
                 timestamp = time,
                 rms = 0.35f + Mathf.Sin(time * 0.7f) * 0.16f,
                 intensity = 0.42f + Mathf.Sin(time * 0.7f) * 0.26f,
+                energy = 0.42f + Mathf.Sin(time * 0.7f) * 0.26f,
                 vocal = 0.38f + Mathf.Sin(time * 0.41f + 0.8f) * 0.3f,
+                vocalLift = 0.38f + Mathf.Sin(time * 0.41f + 0.8f) * 0.3f,
                 percussion = beat,
                 bass = 0.45f + Mathf.Sin(time * 0.53f) * 0.24f,
                 mid = 0.4f + Mathf.Sin(time * 0.31f + 1.2f) * 0.22f,
                 treble = 0.38f + Mathf.Sin(time * 1.13f + 2.5f) * 0.2f,
                 brightness = 0.5f + Mathf.Sin(time * 0.17f) * 0.35f,
                 onset = beat,
-                beat = beat
+                beat = beat,
+                lowImpact = beat * 0.8f,
+                highImpact = beat * 0.65f,
+                fullness = 0.58f,
+                tonality = 0.72f,
+                harmonicChange = 0.28f + beat * 0.45f,
+                sectionLift = 0.48f + Mathf.Sin(time * 0.19f) * 0.28f,
+                beatDensity = 0.55f,
+                beatConfidence = 0.82f,
+                bpm = 108f,
+                heavy = 0.5f + beat * 0.35f,
+                calibrationConfidence = 1f,
+                profileSeconds = 60f
             };
         }
 
@@ -179,7 +194,9 @@ namespace MusicRoad
                 timestamp = time,
                 rms = 0.04f,
                 intensity = 0.04f,
+                energy = 0.04f,
                 vocal = 0.02f,
+                vocalLift = 0.02f,
                 percussion = 0f,
                 bass = 0.05f,
                 mid = 0.04f,

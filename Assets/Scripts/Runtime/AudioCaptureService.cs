@@ -20,6 +20,9 @@ namespace MusicRoad
 
 #if UNITY_WEBGL && !UNITY_EDITOR
         [DllImport("__Internal")]
+        private static extern void MusicRoad_PrepareCapture();
+
+        [DllImport("__Internal")]
         private static extern void MusicRoad_StartCapture();
 
         [DllImport("__Internal")]
@@ -29,6 +32,9 @@ namespace MusicRoad
         private void Awake()
         {
             gameObject.name = "AudioCaptureService";
+#if UNITY_WEBGL && !UNITY_EDITOR
+            MusicRoad_PrepareCapture();
+#endif
         }
 
         public void StartCapture()

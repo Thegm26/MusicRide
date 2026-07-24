@@ -10,7 +10,7 @@ namespace MusicRoad
         private const float LandscapeEdgeDrop = 2.2f;
         private const float ChunkLength = 20f;
         private const float SampleSpacing = 2f;
-        private const int TargetChunkCount = 16;
+        private const int TargetChunkCount = 9;
         private static readonly int[] EnvironmentPattern =
         {
             0, 1, 0, 1, 3, 0, 1, 4,
@@ -231,13 +231,15 @@ namespace MusicRoad
             chunk.samples.Clear();
 
             AudioFeatureFrame features = music != null ? music.Delayed : default;
-            float energy = Mathf.Clamp01(features.intensity * 1.25f + features.vocal * 0.85f);
-            float amount = sequence < 2 ? 0f : Mathf.Lerp(0.55f, 1f, energy);
+            float section = Mathf.Clamp01(features.sectionLift);
+            float turnDrive = Mathf.Clamp01(features.harmonicChange * 0.62f + features.beatDensity * 0.38f);
+            float hillDrive = Mathf.Clamp01(features.sectionLift * 0.58f + features.fullness * 0.24f + features.lowImpact * 0.18f);
+            float amount = sequence < 2 ? 0f : Mathf.Lerp(0.52f, 1f, section);
             float turnNoise = Mathf.PerlinNoise(seed, sequence * 0.115f) * 2f - 1f;
             float hillNoise = Mathf.PerlinNoise(sequence * 0.09f, seed + 4.2f) * 2f - 1f;
             float hillWave = Mathf.Sin(sequence * 0.92f + seed) * 0.9f + hillNoise * 0.72f;
-            float targetYawRate = turnNoise * Mathf.Lerp(0.55f, 1.8f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
-            float targetSlope = hillWave * Mathf.Lerp(0.2f, 0.58f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
+            float targetYawRate = turnNoise * Mathf.Lerp(0.62f, 2.05f, turnDrive) * amount;
+            float targetSlope = hillWave * Mathf.Lerp(0.2f, 0.64f, hillDrive) * amount;
             targetSlope -= Mathf.Clamp(cursor.y * 0.009f, -0.13f, 0.13f);
             targetSlope = Mathf.Clamp(targetSlope, -0.48f, 0.48f);
 

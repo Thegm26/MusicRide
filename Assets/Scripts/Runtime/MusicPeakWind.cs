@@ -33,9 +33,10 @@ namespace MusicRoad
             }
 
             AudioFeatureFrame frame = music.Immediate;
-            float peakSignal = Mathf.Max(frame.intensity, frame.vocal * 0.98f, frame.percussion);
-            float sustainedStrength = Mathf.InverseLerp(0.62f, 0.88f, peakSignal);
-            float hitStrength = Mathf.Clamp01(music.BeatPulse * 1.25f);
+            float sustainedStrength = Mathf.InverseLerp(0.68f, 0.92f, frame.heavy);
+            float hitStrength = frame.onset > 0.82f
+                ? Mathf.Clamp01(music.BeatPulse * 1.15f)
+                : 0f;
             float targetStrength = Mathf.Max(sustainedStrength, hitStrength);
             if (targetStrength > strength)
             {

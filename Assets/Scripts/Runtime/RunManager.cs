@@ -173,7 +173,7 @@ namespace MusicRoad
             panelRect.sizeDelta = new Vector2(310f, 148f);
 
             audioInputText = CreateText(panelObject.transform, font, "SONG WINDOW: NOT CONNECTED", 18, TextAnchor.UpperLeft, new Vector2(14f, -12f), new Vector2(285f, 28f));
-            string[] labels = { "ENERGY", "VOICE", "HITS" };
+            string[] labels = { "SECTION", "MID LIFT", "HIT" };
             Color[] colors =
             {
                 new Color(1f, 0.36f, 0.48f),
@@ -229,7 +229,7 @@ namespace MusicRoad
                 capture.HasReceivedFeatures &&
                 capture.SecondsSinceLastFeatures < 0.75f;
             AudioFeatureFrame frame = receiving ? capture.LatestFeatures : default;
-            float[] levels = { frame.intensity, frame.vocal, frame.percussion };
+            float[] levels = { frame.sectionLift, frame.vocalLift, frame.onset };
 
             for (int i = 0; i < audioBars.Length; i++)
             {
@@ -243,7 +243,7 @@ namespace MusicRoad
                 audioBars[i].rectTransform.localScale = scale;
             }
 
-            bool audible = receiving && frame.rms > 0.015f;
+            bool audible = receiving && frame.rawLevel > 0.004f;
             if (Application.isEditor)
             {
                 audioInputText.text = "SONG WINDOW: EDITOR DEMO";
