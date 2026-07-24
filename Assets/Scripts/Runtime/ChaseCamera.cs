@@ -14,7 +14,7 @@ namespace MusicRoad
             target = followTarget;
             music = musicController;
             car = target.GetComponent<ArcadeCarController>();
-            transform.position = target.position - target.forward * 8.5f + target.up * 5.2f;
+            transform.position = target.position - target.forward * 8.5f + Vector3.up * 5.2f;
             transform.LookAt(target.position + target.forward * 4f);
         }
 
@@ -25,10 +25,10 @@ namespace MusicRoad
                 return;
             }
 
-            Vector3 desired = target.position - target.forward * 8.5f + target.up * 5.2f;
+            Vector3 desired = target.position - target.forward * 8.5f + Vector3.up * 5.2f;
             transform.position = Vector3.SmoothDamp(transform.position, desired, ref velocity, 0.18f);
-            Vector3 focus = target.position + target.forward * 5f + target.up * 0.8f;
-            Quaternion look = Quaternion.LookRotation(focus - transform.position, target.up);
+            Vector3 focus = target.position + target.forward * 5f + Vector3.up * 0.8f;
+            Quaternion look = Quaternion.LookRotation(focus - transform.position, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, look, Time.deltaTime * 7f);
 
             if (music != null)

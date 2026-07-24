@@ -10,8 +10,6 @@ namespace MusicRoad
         private Rigidbody body;
         private RoadGenerator road;
         private Transform[] nitroFlames;
-        private Vector3 currentRoadUp = Vector3.up;
-        private float jumpMagnetRelease;
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
@@ -42,7 +40,7 @@ namespace MusicRoad
             body.mass = 650f;
             body.linearDamping = 0.12f;
             body.angularDamping = 4f;
-            body.useGravity = false;
+            body.useGravity = true;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.Continuous;
             body.centerOfMass = new Vector3(0f, -0.45f, 0f);
@@ -74,7 +72,6 @@ namespace MusicRoad
             float throttle = Input.GetAxisRaw("Vertical");
             float steering = Input.GetAxisRaw("Horizontal");
             bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
-            jumpMagnetRelease = Mathf.Max(0f, jumpMagnetRelease - Time.fixedDeltaTime);
             boosting = nitro && throttle > 0.1f;
             if (boosting && !wasBoosting)
             {
@@ -82,56 +79,30 @@ namespace MusicRoad
             }
             UpdateNitroFlames();
 
+            grounded = Physics.Raycast(
+                transform.position + transform.up * 0.25f,
+                -transform.up,
+                out RaycastHit hit,
+                1.4f);
             bool nearGeneratedRoad = road.TryGetRoadInfo(
                 transform.position,
-                out Vector3 roadPoint,
+                out _,
                 out Vector3 roadTangent,
-                out Vector3 roadUp,
-                out Vector3 roadRight,
-                out float lateralDistance,
-                out float normalDistance);
-            currentRoadUp = nearGeneratedRoad ? roadUp : transform.up;
+                out float lateralDistance);
             onRoad = nearGeneratedRoad && lateralDistance <= RoadGenerator.RoadHalfWidth + 0.35f;
-            grounded = false;
-            if (nearGeneratedRoad)
+            if (grounded)
             {
-                if (jumpMagnetRelease <= 0f)
-                {
-                    grounded = onRoad && Physics.Raycast(
-                        transform.position + roadUp * 0.3f,
-                        -roadUp,
-                        out _,
-                        1.8f);
-                    float signedLateral = Vector3.Dot(transform.position - roadPoint, roadRight);
-                    float stuntStrength = Mathf.Clamp01(Vector3.Angle(roadUp, Vector3.up) / 35f);
-                    ApplyMagneticAdhesion(
-                        roadPoint,
-                        roadTangent,
-                        roadUp,
-                        roadRight,
-                        signedLateral,
-                        normalDistance,
-                        stuntStrength);
-                }
-                else
-                {
-                    body.AddForce(-roadUp * 5f, ForceMode.Acceleration);
-                }
-            }
-            else
-            {
-                body.AddForce(Physics.gravity, ForceMode.Acceleration);
+                ApplySuspensionAndAlignment(hit, roadTangent);
             }
 
             ApplySteering(steering);
 
-            if (grounded || nearGeneratedRoad)
+            if (grounded)
             {
                 ApplyDrive(throttle, boosting);
-                if (grounded && jumpRequested)
+                if (jumpRequested)
                 {
-                    jumpMagnetRelease = 0.65f;
-                    body.AddForce(roadUp * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
+                    body.AddForce(hit.normal * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
                 }
             }
             else
@@ -143,66 +114,21 @@ namespace MusicRoad
             wasBoosting = boosting;
         }
 
-        private void ApplyMagneticAdhesion(
-            Vector3 roadPoint,
-            Vector3 roadTangent,
-            Vector3 roadUp,
-            Vector3 roadRight,
-            float signedLateral,
-            float normalDistance,
-            float stuntStrength)
+        private void ApplySuspensionAndAlignment(RaycastHit hit, Vector3 roadTangent)
         {
-            const float rideHeight = 0.78f;
-            float clampedLateral = signedLateral;
-            if (stuntStrength > 0.05f)
-            {
-                float stuntHalfWidth = Mathf.Lerp(
-                    RoadGenerator.RoadHalfWidth - 0.65f,
-                    RoadGenerator.RoadHalfWidth - 2f,
-                    stuntStrength);
-                clampedLateral = Mathf.Clamp(signedLateral, -stuntHalfWidth, stuntHalfWidth);
-            }
+            float suspensionCompression = Mathf.Clamp01((1.05f - hit.distance) / 0.65f);
+            body.AddForce(
+                hit.normal * (suspensionCompression * 24f - Vector3.Dot(body.linearVelocity, hit.normal) * 4.5f),
+                ForceMode.Acceleration);
 
-            Vector3 constrainedPosition =
-                roadPoint +
-                roadRight * clampedLateral +
-                roadUp * rideHeight;
-            float positionGrip = 1f - Mathf.Exp(
-                -Time.fixedDeltaTime * Mathf.Lerp(10f, 32f, stuntStrength));
-            body.position = Vector3.Lerp(body.position, constrainedPosition, positionGrip);
-
-            float heightError = normalDistance - rideHeight;
-            float normalSpeed = Vector3.Dot(body.linearVelocity, roadUp);
-            float magneticForce = -heightError * 88f - normalSpeed * 13f - 18f;
-            body.AddForce(roadUp * magneticForce, ForceMode.Acceleration);
-
-            Vector3 desiredForward = Vector3.ProjectOnPlane(transform.forward, roadUp).normalized;
+            Vector3 desiredForward = Vector3.ProjectOnPlane(transform.forward, hit.normal).normalized;
             if (desiredForward.sqrMagnitude < 0.1f)
             {
-                desiredForward = roadTangent;
+                desiredForward = Vector3.ProjectOnPlane(roadTangent, hit.normal).normalized;
             }
 
-            Vector3 trackDirection = Vector3.Dot(desiredForward, roadTangent) >= 0f
-                ? roadTangent
-                : -roadTangent;
-            desiredForward = Vector3.Slerp(
-                desiredForward,
-                trackDirection,
-                Mathf.Lerp(onRoad ? 0.22f : 0.1f, 0.76f, stuntStrength)).normalized;
-            Quaternion desiredRotation = Quaternion.LookRotation(desiredForward, roadUp);
-            body.MoveRotation(Quaternion.Slerp(
-                body.rotation,
-                desiredRotation,
-                Time.fixedDeltaTime * Mathf.Lerp(11f, 28f, stuntStrength)));
-
-            float forwardSpeed = Vector3.Dot(body.linearVelocity, trackDirection);
-            float lateralSpeed = Vector3.Dot(body.linearVelocity, roadRight);
-            Vector3 constrainedVelocity =
-                trackDirection * forwardSpeed +
-                roadRight * lateralSpeed * Mathf.Lerp(1f, 0.35f, stuntStrength);
-            float velocityGrip = 1f - Mathf.Exp(
-                -Time.fixedDeltaTime * Mathf.Lerp(5f, 30f, stuntStrength));
-            body.linearVelocity = Vector3.Lerp(body.linearVelocity, constrainedVelocity, velocityGrip);
+            Quaternion desiredRotation = Quaternion.LookRotation(desiredForward, hit.normal);
+            body.MoveRotation(Quaternion.Slerp(body.rotation, desiredRotation, Time.fixedDeltaTime * 6f));
         }
 
         private void ApplySteering(float steering)
@@ -214,7 +140,7 @@ namespace MusicRoad
             float direction = Mathf.Abs(localVelocity.z) > 0.2f ? Mathf.Sign(localVelocity.z) : 1f;
             float turnRate = Mathf.Lerp(95f, 62f, speedRatio);
             float yaw = steering * direction * turnRate * movement * Time.fixedDeltaTime;
-            Quaternion steeringRotation = Quaternion.AngleAxis(yaw, currentRoadUp);
+            Quaternion steeringRotation = Quaternion.AngleAxis(yaw, transform.up);
             body.MoveRotation(steeringRotation * body.rotation);
         }
 
@@ -269,17 +195,12 @@ namespace MusicRoad
         {
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
-            if (road.TryGetRoadInfo(
-                transform.position,
-                out Vector3 roadPoint,
-                out Vector3 roadTangent,
-                out Vector3 roadUp,
-                out _,
-                out _,
-                out _))
+            if (road.TryGetClosestRoadPose(transform.position, out Vector3 roadPoint, out Vector3 roadTangent))
             {
-                Vector3 recoveryPosition = roadPoint + roadUp * 1.35f;
-                Quaternion recoveryRotation = Quaternion.LookRotation(roadTangent, roadUp);
+                Vector3 recoveryPosition = roadPoint + Vector3.up * 1.35f;
+                Quaternion recoveryRotation = Quaternion.LookRotation(
+                    Vector3.ProjectOnPlane(roadTangent, Vector3.up).normalized,
+                    Vector3.up);
                 transform.SetPositionAndRotation(recoveryPosition, recoveryRotation);
                 body.position = recoveryPosition;
                 body.rotation = recoveryRotation;
