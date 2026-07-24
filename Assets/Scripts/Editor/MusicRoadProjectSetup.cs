@@ -50,7 +50,10 @@ namespace MusicRoad.Editor
         [MenuItem("Music Road/Build WebGL")]
         public static void BuildWebGL()
         {
-            CreateSceneAndConfigure();
+            if (!File.Exists(MainScenePath))
+            {
+                CreateSceneAndConfigure();
+            }
             Directory.CreateDirectory("Build");
 
             BuildPlayerOptions options = new BuildPlayerOptions
