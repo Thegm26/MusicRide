@@ -17,8 +17,13 @@ namespace MusicRoad
         private Material roadMaterial;
         private Material shoulderMaterial;
         private Material edgeMaterial;
+        private Material trunkMaterial;
+        private Material foliageMaterial;
+        private Material rockMaterial;
 
         private Vector3 cursor = Vector3.zero;
+        private float yaw;
+        private float yawRate;
         private float slope;
         private int sequence;
         private readonly float seed = 18.247f;
@@ -28,13 +33,19 @@ namespace MusicRoad
             Transform carTransform,
             Material road,
             Material shoulder,
-            Material edge)
+            Material edge,
+            Material trunk,
+            Material foliage,
+            Material rock)
         {
             music = musicController;
             car = carTransform;
             roadMaterial = road;
             shoulderMaterial = shoulder;
             edgeMaterial = edge;
+            trunkMaterial = trunk;
+            foliageMaterial = foliage;
+            rockMaterial = rock;
 
             for (int i = 0; i < TargetChunkCount; i++)
             {
@@ -164,13 +175,24 @@ namespace MusicRoad
             mesh.MarkDynamic();
             filter.sharedMesh = mesh;
 
-            return new RoadChunk
+            RoadChunk chunk = new RoadChunk
             {
                 root = root,
                 mesh = mesh,
                 collider = collider,
-                samples = new List<Vector3>()
+                samples = new List<Vector3>(),
+                trees = new List<Transform>(),
+                rocks = new List<Transform>()
             };
+            for (int i = 0; i < 6; i++)
+            {
+                chunk.trees.Add(CreateTreeSlot(root.transform, i));
+            }
+            for (int i = 0; i < 3; i++)
+            {
+                chunk.rocks.Add(CreateRockSlot(root.transform, i));
+            }
+            return chunk;
         }
 
         private void PopulateChunk(RoadChunk chunk)
@@ -181,8 +203,10 @@ namespace MusicRoad
             AudioFeatureFrame features = music != null ? music.Delayed : default;
             float energy = Mathf.Clamp01(features.intensity * 1.25f + features.vocal * 0.85f);
             float amount = sequence < 2 ? 0f : Mathf.Lerp(0.55f, 1f, energy);
+            float turnNoise = Mathf.PerlinNoise(seed, sequence * 0.115f) * 2f - 1f;
             float hillNoise = Mathf.PerlinNoise(sequence * 0.09f, seed + 4.2f) * 2f - 1f;
             float hillWave = Mathf.Sin(sequence * 0.92f + seed) * 0.9f + hillNoise * 0.72f;
+            float targetYawRate = turnNoise * Mathf.Lerp(0.55f, 1.8f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
             float targetSlope = hillWave * Mathf.Lerp(0.2f, 0.58f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
             targetSlope -= Mathf.Clamp(cursor.y * 0.009f, -0.13f, 0.13f);
             targetSlope = Mathf.Clamp(targetSlope, -0.48f, 0.48f);
@@ -196,13 +220,107 @@ namespace MusicRoad
                     break;
                 }
 
+                yawRate = Mathf.MoveTowards(yawRate, targetYawRate, 0.12f);
                 slope = Mathf.MoveTowards(slope, targetSlope, 0.024f);
-                cursor += Vector3.forward * SampleSpacing + Vector3.up * (slope * SampleSpacing);
+                yaw += yawRate * SampleSpacing;
+                Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+                cursor += forward * SampleSpacing + Vector3.up * (slope * SampleSpacing);
             }
 
             BuildMesh(chunk);
+            PopulateEnvironment(chunk);
             chunk.boundsCenter = chunk.samples[chunk.samples.Count / 2];
             sequence++;
+        }
+
+        private void PopulateEnvironment(RoadChunk chunk)
+        {
+            for (int i = 0; i < chunk.trees.Count; i++)
+            {
+                int pairIndex = i / 2;
+                int sampleIndex = Mathf.Min(2 + pairIndex * 3, chunk.samples.Count - 2);
+                Vector3 tangent = (chunk.samples[sampleIndex + 1] - chunk.samples[sampleIndex]).normalized;
+                Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
+                float side = i % 2 == 0 ? -1f : 1f;
+                Transform tree = chunk.trees[i];
+                tree.position = chunk.samples[sampleIndex] + right * side * Random.Range(17f, 28f);
+                tree.rotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+                tree.localScale = Vector3.one * Random.Range(0.85f, 1.35f);
+            }
+
+            for (int i = 0; i < chunk.rocks.Count; i++)
+            {
+                int sampleIndex = Mathf.Min(3 + i * 3, chunk.samples.Count - 2);
+                Vector3 tangent = (chunk.samples[sampleIndex + 1] - chunk.samples[sampleIndex]).normalized;
+                Vector3 right = Vector3.Cross(Vector3.up, tangent).normalized;
+                float side = i % 2 == 0 ? 1f : -1f;
+                Transform rock = chunk.rocks[i];
+                rock.position = chunk.samples[sampleIndex] + right * side * Random.Range(16f, 25f);
+                rock.rotation = Quaternion.Euler(
+                    Random.Range(-12f, 12f),
+                    Random.Range(0f, 360f),
+                    Random.Range(-12f, 12f));
+                rock.localScale = new Vector3(
+                    Random.Range(0.8f, 1.8f),
+                    Random.Range(0.55f, 1.25f),
+                    Random.Range(0.8f, 1.8f));
+            }
+        }
+
+        private Transform CreateTreeSlot(Transform parent, int index)
+        {
+            GameObject root = new GameObject($"TREE_SLOT_{index + 1:00}");
+            root.transform.SetParent(parent, false);
+            CreateEnvironmentPrimitive(
+                root.transform,
+                "Placeholder Trunk",
+                PrimitiveType.Cylinder,
+                new Vector3(0f, 1.45f, 0f),
+                new Vector3(0.5f, 1.45f, 0.5f),
+                trunkMaterial);
+            CreateEnvironmentPrimitive(
+                root.transform,
+                "Placeholder Foliage",
+                PrimitiveType.Sphere,
+                new Vector3(0f, 4.2f, 0f),
+                new Vector3(3.2f, 4f, 3.2f),
+                foliageMaterial);
+            return root.transform;
+        }
+
+        private Transform CreateRockSlot(Transform parent, int index)
+        {
+            GameObject root = new GameObject($"ROCK_SLOT_{index + 1:00}");
+            root.transform.SetParent(parent, false);
+            CreateEnvironmentPrimitive(
+                root.transform,
+                "Placeholder Rock",
+                PrimitiveType.Cube,
+                new Vector3(0f, 0.65f, 0f),
+                new Vector3(2.4f, 1.3f, 1.8f),
+                rockMaterial);
+            return root.transform;
+        }
+
+        private static void CreateEnvironmentPrimitive(
+            Transform parent,
+            string name,
+            PrimitiveType type,
+            Vector3 localPosition,
+            Vector3 localScale,
+            Material material)
+        {
+            GameObject primitive = GameObject.CreatePrimitive(type);
+            primitive.name = name;
+            primitive.transform.SetParent(parent, false);
+            primitive.transform.localPosition = localPosition;
+            primitive.transform.localScale = localScale;
+            primitive.GetComponent<Renderer>().sharedMaterial = material;
+            Collider collider = primitive.GetComponent<Collider>();
+            if (collider != null)
+            {
+                Destroy(collider);
+            }
         }
 
         private void BuildMesh(RoadChunk chunk)
@@ -292,6 +410,8 @@ namespace MusicRoad
             public Mesh mesh;
             public MeshCollider collider;
             public List<Vector3> samples;
+            public List<Transform> trees;
+            public List<Transform> rocks;
             public Vector3 boundsCenter;
         }
     }

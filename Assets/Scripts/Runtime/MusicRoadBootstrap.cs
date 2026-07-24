@@ -31,17 +31,28 @@ namespace MusicRoad
             Material glassMaterial = CreateMaterial(shader, "Toy Glass", new Color(0.18f, 0.65f, 0.9f), 0.8f);
             Material flameMaterial = CreateMaterial(shader, "Nitro Flame", new Color(1f, 0.58f, 0.04f), 0f, true);
             Material windMaterial = CreateMaterial(shader, "Peak Wind", new Color(0.88f, 0.96f, 1f), 0f, true);
+            Material trunkMaterial = CreateMaterial(shader, "Environment Trunks", new Color(0.24f, 0.12f, 0.055f), 0f);
+            Material foliageMaterial = CreateMaterial(shader, "Environment Foliage", new Color(0.08f, 0.34f, 0.14f), 0f, true);
+            Material rockMaterial = CreateMaterial(shader, "Environment Rocks", new Color(0.3f, 0.34f, 0.38f), 0.05f);
 
             AudioCaptureService capture = new GameObject("AudioCaptureService").AddComponent<AudioCaptureService>();
             Light sun = CreateLighting();
             MusicWorldController world = new GameObject("Music World Controller").AddComponent<MusicWorldController>();
-            world.Initialize(capture, sun, edgeMaterial);
+            world.Initialize(capture, sun, edgeMaterial, foliageMaterial);
 
             GameObject carObject = CreateToyCar(carMaterial, darkMaterial, glassMaterial, flameMaterial);
             ArcadeCarController car = carObject.GetComponent<ArcadeCarController>();
 
             RoadGenerator road = new GameObject("Procedural Music Road").AddComponent<RoadGenerator>();
-            road.Initialize(world, carObject.transform, roadMaterial, shoulderMaterial, edgeMaterial);
+            road.Initialize(
+                world,
+                carObject.transform,
+                roadMaterial,
+                shoulderMaterial,
+                edgeMaterial,
+                trunkMaterial,
+                foliageMaterial,
+                rockMaterial);
             car.Initialize(road);
             car.PlaceAtStart();
 

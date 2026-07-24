@@ -46,4 +46,14 @@ Brotli headers required by Unity WebGL.
 
 ## Asset replacement points
 
-The prototype intentionally creates placeholder objects at runtime. Replace the generated car, roadside props, particle material, sky presentation, and road materials after importing final art. Keep `ArcadeCarController` on the player root and preserve its Rigidbody and BoxCollider.
+The prototype creates named `TREE_SLOT_*` and `ROCK_SLOT_*` placeholders outside
+the road shoulders. A useful first asset pack should contain:
+
+- 3–5 low-poly tree prefabs with simple LODs
+- 3–5 rock or boulder prefabs
+- Optional grass clumps, shrubs, and roadside signs
+- A lightweight snow/wind particle texture or material
+
+Replace the placeholder children while keeping the slot roots so recycled road
+chunks continue positioning them correctly. Keep `ArcadeCarController` on the
+player root and preserve its Rigidbody and BoxCollider.

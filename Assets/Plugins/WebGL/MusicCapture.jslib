@@ -326,26 +326,28 @@ mergeInto(LibraryManager.library, {
       ) * (0.55 + analysisConfidence * 0.45);
       var hitRatio =
         fluxLevel / Math.max(0.0015, MusicRoadCapture.rollingFlux);
-      var percussion = Math.max(
+      var transientHit = Math.max(
         0,
-        Math.min(1, (hitRatio - 1.05) / 1.65)
+        Math.min(1, (hitRatio - 0.88) / 1.3)
       );
-      if (fluxLevel < MusicRoadCapture.rollingFlux * 0.9) {
-        percussion = 0;
-      } else {
-        percussion = Math.min(0.88, percussion * 0.88 + intensity * 0.08) *
-          (0.6 + analysisConfidence * 0.4);
+      if (fluxLevel < MusicRoadCapture.rollingFlux * 0.95) {
+        transientHit = 0;
       }
+      var percussion = Math.min(
+        0.92,
+        transientHit * 0.88 + intensity * 0.08
+      ) * (0.72 + analysisConfidence * 0.28);
       if (!isAudible) {
         vocalStrength = 0;
+        transientHit = 0;
         percussion = 0;
       }
 
       var seconds = now * 0.001;
       var beat =
-        percussion > 0.55 &&
+        transientHit > 0.48 &&
         seconds - MusicRoadCapture.lastBeatTime > 0.18
-          ? percussion
+          ? Math.max(percussion, Math.min(0.95, transientHit * 0.95))
           : 0;
 
       if (beat > 0) {
@@ -373,7 +375,7 @@ mergeInto(LibraryManager.library, {
             intensity
           ),
           brightness: Math.min(0.88, 0.08 + brightness * 0.78),
-          onset: percussion,
+          onset: transientHit,
           beat: beat,
         })
       );

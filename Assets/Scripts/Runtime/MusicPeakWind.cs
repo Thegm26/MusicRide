@@ -34,14 +34,22 @@ namespace MusicRoad
 
             AudioFeatureFrame frame = music.Immediate;
             float peakSignal = Mathf.Max(frame.intensity, frame.vocal * 0.98f, frame.percussion);
-            float targetStrength = Mathf.InverseLerp(0.62f, 0.88f, peakSignal);
-            float responseSpeed = targetStrength > strength ? 3.5f : 0.85f;
-            strength = Mathf.MoveTowards(strength, targetStrength, Time.deltaTime * responseSpeed);
+            float sustainedStrength = Mathf.InverseLerp(0.62f, 0.88f, peakSignal);
+            float hitStrength = Mathf.Clamp01(music.BeatPulse * 1.25f);
+            float targetStrength = Mathf.Max(sustainedStrength, hitStrength);
+            if (targetStrength > strength)
+            {
+                strength = targetStrength;
+            }
+            else
+            {
+                strength = Mathf.MoveTowards(strength, targetStrength, Time.deltaTime * 0.95f);
+            }
 
             int activeCount = Mathf.RoundToInt(strength * PoolSize);
             Vector3 windDirection = (-car.forward + Vector3.down * 0.08f).normalized;
             Quaternion windRotation = Quaternion.LookRotation(windDirection, Vector3.up);
-            float speed = Mathf.Lerp(30f, 76f, strength);
+            float speed = Mathf.Lerp(34f, 112f, strength);
 
             for (int i = 0; i < PoolSize; i++)
             {
