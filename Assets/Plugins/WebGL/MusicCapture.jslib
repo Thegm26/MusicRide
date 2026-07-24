@@ -57,10 +57,10 @@ mergeInto(LibraryManager.library, {
       var sorted = MusicRoadCapture.levelHistory.slice().sort(function (a, b) {
         return a - b;
       });
-      var floorIndex = Math.floor((sorted.length - 1) * 0.08);
-      var ceilingIndex = Math.floor((sorted.length - 1) * 0.97);
+      var floorIndex = Math.floor((sorted.length - 1) * 0.05);
+      var ceilingIndex = Math.floor((sorted.length - 1) * 0.99);
       var targetFloor = sorted[floorIndex];
-      var targetCeiling = Math.max(targetFloor + 0.018, sorted[ceilingIndex]);
+      var targetCeiling = Math.max(targetFloor + 0.028, sorted[ceilingIndex]);
       MusicRoadCapture.windowFloor =
         MusicRoadCapture.windowFloor * 0.82 + targetFloor * 0.18;
       MusicRoadCapture.windowCeiling =
@@ -228,9 +228,19 @@ mergeInto(LibraryManager.library, {
             (rawLevel - MusicRoadCapture.windowFloor) / windowRange
           )
         );
-        windowPosition =
-          windowPosition * windowPosition * (3 - 2 * windowPosition);
-        intensity = 0.06 + windowPosition * 0.86;
+        var constrainedPosition = Math.pow(windowPosition, 1.7);
+        var exceptionalPeak = Math.max(
+          0,
+          Math.min(
+            1,
+            (rawLevel - MusicRoadCapture.windowCeiling) /
+              (windowRange * 0.4)
+          )
+        );
+        intensity = Math.min(
+          0.96,
+          0.05 + constrainedPosition * 0.72 + exceptionalPeak * 0.19
+        );
       }
 
       MusicRoadCapture.rollingEnergy =
@@ -245,21 +255,21 @@ mergeInto(LibraryManager.library, {
         MusicRoadCapture.rollingFlux * 0.92 + fluxLevel * 0.08;
 
       var vocalRatio = vocal / Math.max(0.006, MusicRoadCapture.rollingVocal);
-      var vocalRise = Math.max(0, Math.min(1, (vocalRatio - 0.7) / 1.05));
+      var vocalRise = Math.max(0, Math.min(1, (vocalRatio - 0.82) / 1.32));
       var vocalStrength = Math.min(
-        0.94,
-        vocalRise * 0.7 + intensity * 0.3
+        0.9,
+        vocalRise * 0.72 + intensity * 0.22
       );
       var hitRatio =
         fluxLevel / Math.max(0.0015, MusicRoadCapture.rollingFlux);
       var percussion = Math.max(
         0,
-        Math.min(1, (hitRatio - 0.9) / 1.4)
+        Math.min(1, (hitRatio - 1.05) / 1.65)
       );
       if (fluxLevel < MusicRoadCapture.rollingFlux * 0.9) {
         percussion = 0;
       } else {
-        percussion = Math.min(0.96, percussion * 0.86 + intensity * 0.14);
+        percussion = Math.min(0.92, percussion * 0.88 + intensity * 0.08);
       }
 
       var seconds = now * 0.001;

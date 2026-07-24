@@ -6,9 +6,10 @@ namespace MusicRoad
     public sealed class ArcadeCarController : MonoBehaviour
     {
         private const float NormalMaxSpeed = 30f;
-        private const float NitroMaxSpeed = 44f;
+        private const float NitroMaxSpeed = 56f;
         private Rigidbody body;
         private RoadGenerator road;
+        private Transform[] nitroFlames;
         private Vector3 safePosition;
         private Quaternion safeRotation;
         private float offRoadTime;
@@ -17,6 +18,7 @@ namespace MusicRoad
         private bool onRoad;
         private bool jumpRequested;
         private bool boosting;
+        private bool wasBoosting;
 
         public float SpeedKph => body == null ? 0f : body.linearVelocity.magnitude * 3.6f;
         public bool IsOnRoad => onRoad;
@@ -47,6 +49,15 @@ namespace MusicRoad
             body.centerOfMass = new Vector3(0f, -0.45f, 0f);
         }
 
+        public void ConfigureNitroFlames(Transform[] flames)
+        {
+            nitroFlames = flames;
+            for (int i = 0; i < nitroFlames.Length; i++)
+            {
+                nitroFlames[i].gameObject.SetActive(false);
+            }
+        }
+
         public void PlaceAtStart()
         {
             transform.SetPositionAndRotation(road.GetStartPosition(), road.GetStartRotation());
@@ -67,6 +78,11 @@ namespace MusicRoad
             float steering = Input.GetAxisRaw("Horizontal");
             bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
             boosting = nitro && throttle > 0.1f;
+            if (boosting && !wasBoosting)
+            {
+                body.AddForce(transform.forward * 4.5f, ForceMode.VelocityChange);
+            }
+            UpdateNitroFlames();
 
             grounded = Physics.Raycast(transform.position + transform.up * 0.25f, -transform.up, out RaycastHit hit, 1.4f);
             road.TryGetRoadInfo(transform.position, out Vector3 roadPoint, out Vector3 roadTangent, out float lateralDistance);
@@ -90,10 +106,11 @@ namespace MusicRoad
             else
             {
                 body.AddForce(Physics.gravity * 0.8f, ForceMode.Acceleration);
-                body.AddForce(transform.forward * (throttle * (boosting ? 7f : 3.5f)), ForceMode.Acceleration);
+                body.AddForce(transform.forward * (throttle * (boosting ? 14f : 3.5f)), ForceMode.Acceleration);
             }
 
             jumpRequested = false;
+            wasBoosting = boosting;
             UpdateRecovery(roadPoint, roadTangent);
         }
 
@@ -135,7 +152,7 @@ namespace MusicRoad
             if (speed < speedLimit || Mathf.Sign(throttle) != Mathf.Sign(localVelocity.z))
             {
                 float acceleration = throttle >= 0f
-                    ? useNitro ? 34f : 18f
+                    ? useNitro ? 58f : 18f
                     : 11f;
                 body.AddForce(transform.forward * (throttle * acceleration * roadGrip), ForceMode.Acceleration);
             }
@@ -146,6 +163,29 @@ namespace MusicRoad
             if (!onRoad)
             {
                 body.AddForce(-body.linearVelocity * 0.8f, ForceMode.Acceleration);
+            }
+        }
+
+        private void UpdateNitroFlames()
+        {
+            if (nitroFlames == null)
+            {
+                return;
+            }
+
+            float pulse = 1f + Mathf.Sin(Time.time * 38f) * 0.18f;
+            for (int i = 0; i < nitroFlames.Length; i++)
+            {
+                Transform flame = nitroFlames[i];
+                if (flame.gameObject.activeSelf != boosting)
+                {
+                    flame.gameObject.SetActive(boosting);
+                }
+
+                if (boosting)
+                {
+                    flame.localScale = new Vector3(0.9f, 0.9f, pulse);
+                }
             }
         }
 

@@ -11,7 +11,6 @@ namespace MusicRoad
         private AudioCaptureService capture;
         private Light sun;
         private Light beatLight;
-        private Material roadMaterial;
         private Material edgeMaterial;
         private AudioFeatureFrame smoothed;
         private AudioFeatureFrame delayed;
@@ -28,11 +27,10 @@ namespace MusicRoad
             public AudioFeatureFrame frame;
         }
 
-        public void Initialize(AudioCaptureService audioCapture, Light directionalLight, Material road, Material edge)
+        public void Initialize(AudioCaptureService audioCapture, Light directionalLight, Material edge)
         {
             capture = audioCapture;
             sun = directionalLight;
-            roadMaterial = road;
             edgeMaterial = edge;
             capture.FeaturesReceived += OnFeatures;
             smoothed = CreateIdleFrame(0f);
@@ -127,14 +125,8 @@ namespace MusicRoad
 
             if (edgeMaterial != null)
             {
-                edgeMaterial.color = Color.Lerp(AccentColor, Color.white, beatPulse);
-                edgeMaterial.SetColor("_EmissionColor", AccentColor * (2.5f + vocal * 6f + percussion * 10f));
-            }
-
-            if (roadMaterial != null)
-            {
-                roadMaterial.color = Color.Lerp(new Color(0.018f, 0.022f, 0.04f), spectral * 0.42f, vocal);
-                roadMaterial.SetColor("_EmissionColor", spectral * (vocal * 0.9f + percussion * 1.7f));
+                edgeMaterial.color = Color.Lerp(Color.white, AccentColor, 0.18f + vocal * 0.32f);
+                edgeMaterial.SetColor("_EmissionColor", AccentColor * (0.2f + vocal * 0.75f + percussion * 1.4f));
             }
         }
 

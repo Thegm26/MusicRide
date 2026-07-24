@@ -25,18 +25,19 @@ namespace MusicRoad
             Shader shader = runtimeShader != null ? runtimeShader : Shader.Find("MusicRoad/Reactive");
             Material roadMaterial = CreateMaterial(shader, "Road", new Color(0.09f, 0.1f, 0.14f), 0.25f);
             Material shoulderMaterial = CreateMaterial(shader, "Shoulder", new Color(0.19f, 0.35f, 0.27f), 0f);
-            Material edgeMaterial = CreateMaterial(shader, "Music Edge", new Color(0.1f, 0.9f, 1f), 0.4f, true);
+            Material edgeMaterial = CreateMaterial(shader, "Music Lane Strips", Color.white, 0.4f, true);
             Material carMaterial = CreateMaterial(shader, "Toy Car", new Color(1f, 0.18f, 0.16f), 0.65f);
             Material darkMaterial = CreateMaterial(shader, "Toy Dark", new Color(0.025f, 0.03f, 0.045f), 0.35f);
             Material glassMaterial = CreateMaterial(shader, "Toy Glass", new Color(0.18f, 0.65f, 0.9f), 0.8f);
+            Material flameMaterial = CreateMaterial(shader, "Nitro Flame", new Color(1f, 0.58f, 0.04f), 0f, true);
             Material propMaterial = CreateMaterial(shader, "Red Road Blocks", new Color(0.9f, 0.035f, 0.025f), 0.25f, true);
 
             AudioCaptureService capture = new GameObject("AudioCaptureService").AddComponent<AudioCaptureService>();
             Light sun = CreateLighting();
             MusicWorldController world = new GameObject("Music World Controller").AddComponent<MusicWorldController>();
-            world.Initialize(capture, sun, roadMaterial, edgeMaterial);
+            world.Initialize(capture, sun, edgeMaterial);
 
-            GameObject carObject = CreateToyCar(carMaterial, darkMaterial, glassMaterial);
+            GameObject carObject = CreateToyCar(carMaterial, darkMaterial, glassMaterial, flameMaterial);
             ArcadeCarController car = carObject.GetComponent<ArcadeCarController>();
 
             RoadGenerator road = new GameObject("Procedural Music Road").AddComponent<RoadGenerator>();
@@ -97,7 +98,7 @@ namespace MusicRoad
             return light;
         }
 
-        private static GameObject CreateToyCar(Material bodyMaterial, Material darkMaterial, Material glassMaterial)
+        private static GameObject CreateToyCar(Material bodyMaterial, Material darkMaterial, Material glassMaterial, Material flameMaterial)
         {
             GameObject root = new GameObject("Player Toy Car");
             root.transform.position = new Vector3(0f, 1f, 4f);
@@ -126,8 +127,47 @@ namespace MusicRoad
                 wheel.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
             }
 
+            Transform[] nitroFlames =
+            {
+                CreateNitroFlame(root.transform, "Left Nitro Flame", new Vector3(-0.5f, -0.02f, -1.8f), flameMaterial),
+                CreateNitroFlame(root.transform, "Right Nitro Flame", new Vector3(0.5f, -0.02f, -1.8f), flameMaterial)
+            };
+            root.GetComponent<ArcadeCarController>().ConfigureNitroFlames(nitroFlames);
+
             rigidbody.centerOfMass = new Vector3(0f, -0.45f, 0f);
             return root;
+        }
+
+        private static Transform CreateNitroFlame(Transform parent, string name, Vector3 position, Material material)
+        {
+            GameObject flame = new GameObject(name);
+            flame.transform.SetParent(parent, false);
+            flame.transform.localPosition = position;
+
+            Mesh mesh = new Mesh { name = $"{name} Mesh" };
+            mesh.vertices = new[]
+            {
+                new Vector3(-0.2f, -0.2f, 0f),
+                new Vector3(0.2f, -0.2f, 0f),
+                new Vector3(0.2f, 0.2f, 0f),
+                new Vector3(-0.2f, 0.2f, 0f),
+                new Vector3(0f, 0f, -1.65f)
+            };
+            mesh.triangles = new[]
+            {
+                0, 1, 4,
+                1, 2, 4,
+                2, 3, 4,
+                3, 0, 4,
+                0, 3, 2,
+                0, 2, 1
+            };
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+
+            flame.AddComponent<MeshFilter>().sharedMesh = mesh;
+            flame.AddComponent<MeshRenderer>().sharedMaterial = material;
+            return flame.transform;
         }
 
         private static GameObject AddPrimitive(Transform parent, string name, PrimitiveType type, Vector3 position, Vector3 scale, Material material)

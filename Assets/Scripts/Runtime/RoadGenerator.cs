@@ -166,11 +166,11 @@ namespace MusicRoad
             float amount = sequence < 2 ? 0f : Mathf.Lerp(0.55f, 1f, energy);
             float turnNoise = Mathf.PerlinNoise(seed, sequence * 0.115f) * 2f - 1f;
             float hillNoise = Mathf.PerlinNoise(sequence * 0.09f, seed + 4.2f) * 2f - 1f;
-            float hillWave = Mathf.Sin(sequence * 0.82f + seed) * 0.68f + hillNoise * 0.55f;
-            float targetYawRate = turnNoise * Mathf.Lerp(0.35f, 2.1f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
-            float targetSlope = hillWave * Mathf.Lerp(0.13f, 0.38f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
-            targetSlope -= Mathf.Clamp(cursor.y * 0.007f, -0.09f, 0.09f);
-            targetSlope = Mathf.Clamp(targetSlope, -0.28f, 0.28f);
+            float hillWave = Mathf.Sin(sequence * 0.92f + seed) * 0.9f + hillNoise * 0.72f;
+            float targetYawRate = turnNoise * Mathf.Lerp(0.5f, 2.8f, Mathf.Clamp01(features.vocal * 1.25f)) * amount;
+            float targetSlope = hillWave * Mathf.Lerp(0.2f, 0.58f, Mathf.Clamp01(features.intensity * 0.7f + features.vocal * 0.75f)) * amount;
+            targetSlope -= Mathf.Clamp(cursor.y * 0.009f, -0.13f, 0.13f);
+            targetSlope = Mathf.Clamp(targetSlope, -0.48f, 0.48f);
 
             int sampleCount = Mathf.RoundToInt(ChunkLength / SampleSpacing);
             for (int i = 0; i <= sampleCount; i++)
@@ -182,7 +182,7 @@ namespace MusicRoad
                 }
 
                 yawRate = Mathf.MoveTowards(yawRate, targetYawRate, 0.11f);
-                slope = Mathf.MoveTowards(slope, targetSlope, 0.012f);
+                slope = Mathf.MoveTowards(slope, targetSlope, 0.024f);
                 yaw += yawRate * SampleSpacing;
                 Vector3 forward = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
                 cursor += forward * SampleSpacing + Vector3.up * (slope * SampleSpacing);
@@ -195,7 +195,7 @@ namespace MusicRoad
 
         private void BuildMesh(RoadChunk chunk)
         {
-            const int verticesPerRow = 6;
+            const int verticesPerRow = 8;
             int rowCount = chunk.samples.Count;
             var vertices = new Vector3[rowCount * verticesPerRow];
             var uvs = new Vector2[vertices.Length];
@@ -216,7 +216,17 @@ namespace MusicRoad
                 }
 
                 Vector3 right = Vector3.Cross(Vector3.up, tangent.normalized).normalized;
-                float[] offsets = { -ShoulderHalfWidth, -RoadHalfWidth, -RoadHalfWidth + 0.28f, RoadHalfWidth - 0.28f, RoadHalfWidth, ShoulderHalfWidth };
+                float[] offsets =
+                {
+                    -ShoulderHalfWidth,
+                    -RoadHalfWidth,
+                    -RoadHalfWidth + 0.22f,
+                    -0.11f,
+                    0.11f,
+                    RoadHalfWidth - 0.22f,
+                    RoadHalfWidth,
+                    ShoulderHalfWidth
+                };
                 for (int column = 0; column < verticesPerRow; column++)
                 {
                     int index = i * verticesPerRow + column;
@@ -231,7 +241,9 @@ namespace MusicRoad
                 AddStrip(edgeTriangles, row, 1, verticesPerRow);
                 AddStrip(roadTriangles, row, 2, verticesPerRow);
                 AddStrip(edgeTriangles, row, 3, verticesPerRow);
-                AddStrip(shoulderTriangles, row, 4, verticesPerRow);
+                AddStrip(roadTriangles, row, 4, verticesPerRow);
+                AddStrip(edgeTriangles, row, 5, verticesPerRow);
+                AddStrip(shoulderTriangles, row, 6, verticesPerRow);
             }
 
             chunk.mesh.Clear();

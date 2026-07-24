@@ -6,12 +6,14 @@ namespace MusicRoad
     {
         private Transform target;
         private MusicWorldController music;
+        private ArcadeCarController car;
         private Vector3 velocity;
 
         public void Initialize(Transform followTarget, MusicWorldController musicController)
         {
             target = followTarget;
             music = musicController;
+            car = target.GetComponent<ArcadeCarController>();
             transform.position = target.position - target.forward * 8.5f + Vector3.up * 5.2f;
             transform.LookAt(target.position + target.forward * 4f);
         }
@@ -34,7 +36,8 @@ namespace MusicRoad
                 Camera camera = GetComponent<Camera>();
                 if (camera != null)
                 {
-                    camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, 66f + music.Immediate.rms * 8f + music.BeatPulse * 5f, Time.deltaTime * 9f);
+                    float boostFov = car != null && car.IsBoosting ? 13f : 0f;
+                    camera.fieldOfView = Mathf.Lerp(camera.fieldOfView, 66f + music.Immediate.rms * 8f + music.BeatPulse * 5f + boostFov, Time.deltaTime * 9f);
                 }
 
                 if (music.BeatPulse > 0.01f)
