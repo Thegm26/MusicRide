@@ -58,6 +58,7 @@ namespace MusicRoad
             Material rockMaterial = CreateMaterial(shader, "Environment Rocks", new Color(0.3f, 0.34f, 0.38f), 0.05f);
 
             AudioCaptureService capture = new GameObject("AudioCaptureService").AddComponent<AudioCaptureService>();
+            CreateSkybox();
             Light sun = CreateLighting();
             MusicWorldController world = new GameObject("Music World Controller").AddComponent<MusicWorldController>();
             world.Initialize(capture, sun, edgeMaterial, foliageMaterial);
@@ -85,8 +86,6 @@ namespace MusicRoad
             CreateCamera(carObject.transform, world);
             MusicPeakWind wind = new GameObject("Maximum Music Wind").AddComponent<MusicPeakWind>();
             wind.Initialize(world, carObject.transform, windMaterial);
-            MusicWeather weather = new GameObject("Music Weather").AddComponent<MusicWeather>();
-            weather.Initialize(world, carObject.transform);
 
             RunManager run = new GameObject("Run Manager").AddComponent<RunManager>();
             run.Initialize(capture, car);
@@ -134,8 +133,33 @@ namespace MusicRoad
             light.cullingMask &= ~(1 << VehicleRenderLayer);
             light.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
             RenderSettings.sun = light;
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.48f, 0.62f, 0.78f);
+            RenderSettings.ambientEquatorColor = new Color(0.28f, 0.4f, 0.48f);
+            RenderSettings.ambientGroundColor = new Color(0.12f, 0.17f, 0.14f);
             return light;
+        }
+
+        private static void CreateSkybox()
+        {
+            Shader skyShader = Shader.Find("Skybox/Procedural");
+            if (skyShader == null)
+            {
+                return;
+            }
+
+            Material sky = new Material(skyShader)
+            {
+                name = "Runtime Music Sky"
+            };
+            sky.SetFloat("_SunDisk", 2f);
+            sky.SetFloat("_SunSize", 0.045f);
+            sky.SetFloat("_SunSizeConvergence", 7f);
+            sky.SetFloat("_AtmosphereThickness", 1.15f);
+            sky.SetColor("_SkyTint", new Color(0.32f, 0.55f, 0.82f));
+            sky.SetColor("_GroundColor", new Color(0.16f, 0.22f, 0.2f));
+            sky.SetFloat("_Exposure", 1.1f);
+            RenderSettings.skybox = sky;
         }
 
         private static GameObject CreatePlayerCar(
@@ -349,7 +373,7 @@ namespace MusicRoad
             camera.fieldOfView = 60f;
             camera.nearClipPlane = 0.15f;
             camera.farClipPlane = 110f;
-            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.clearFlags = CameraClearFlags.Skybox;
             camera.backgroundColor = new Color(0.16f, 0.22f, 0.34f);
             cameraObject.AddComponent<AudioListener>();
             cameraObject.AddComponent<ChaseCamera>().Initialize(car, world);

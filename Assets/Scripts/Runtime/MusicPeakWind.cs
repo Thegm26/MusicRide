@@ -9,6 +9,7 @@ namespace MusicRoad
 
         private MusicWorldController music;
         private Transform car;
+        private Rigidbody carBody;
         private Material material;
         private float strength;
 
@@ -16,6 +17,7 @@ namespace MusicRoad
         {
             music = musicController;
             car = carTransform;
+            carBody = car.GetComponent<Rigidbody>();
             material = streakMaterial;
 
             for (int i = 0; i < PoolSize; i++)
@@ -37,7 +39,11 @@ namespace MusicRoad
             float hitStrength = frame.onset > 0.82f
                 ? Mathf.Clamp01(music.BeatPulse * 1.15f)
                 : 0f;
-            float targetStrength = Mathf.Max(sustainedStrength, hitStrength);
+            float carSpeed = carBody != null
+                ? Vector3.ProjectOnPlane(carBody.linearVelocity, Vector3.up).magnitude
+                : 0f;
+            float motionAmount = Mathf.InverseLerp(8f, 28f, carSpeed);
+            float targetStrength = Mathf.Max(sustainedStrength, hitStrength) * motionAmount;
             if (targetStrength > strength)
             {
                 strength = targetStrength;
@@ -47,7 +53,7 @@ namespace MusicRoad
                 strength = Mathf.MoveTowards(strength, targetStrength, Time.deltaTime * 0.95f);
             }
 
-            int activeCount = Mathf.RoundToInt(strength * PoolSize);
+            int activeCount = Mathf.RoundToInt(strength * 34f);
             Vector3 windDirection = (-car.forward + Vector3.down * 0.08f).normalized;
             Quaternion windRotation = Quaternion.LookRotation(windDirection, Vector3.up);
             float speed = Mathf.Lerp(34f, 112f, strength);

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace MusicRoad
 {
@@ -21,10 +22,16 @@ namespace MusicRoad
         private bool grounded;
         private bool onRoad;
         private bool jumpRequested;
+        private bool frontflipRequested;
+        private bool frontflipActive;
         private bool boosting;
         private bool wasBoosting;
+        private float frontflipDegreesRemaining;
+        private Vector3 frontflipAxis;
 
         public float SpeedKph => body == null ? 0f : body.linearVelocity.magnitude * 3.6f;
+        public bool IsGrounded => grounded;
+        public bool IsFrontflipping => frontflipActive;
         public bool IsOnRoad => onRoad;
         public bool IsBoosting => boosting;
         public bool CanBoost => canBoost;
@@ -41,6 +48,13 @@ namespace MusicRoad
             {
                 jumpRequested = true;
             }
+
+            if (
+                Input.GetMouseButtonDown(0) &&
+                (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
+            {
+                frontflipRequested = true;
+            }
         }
 
         public void Initialize(RoadGenerator roadGenerator)
@@ -50,6 +64,7 @@ namespace MusicRoad
             body.mass = vehicleMass;
             body.linearDamping = 0.12f;
             body.angularDamping = 4f;
+            body.maxAngularVelocity = 24f;
             body.useGravity = true;
             body.interpolation = RigidbodyInterpolation.Interpolate;
             body.collisionDetectionMode = CollisionDetectionMode.Continuous;
@@ -97,6 +112,8 @@ namespace MusicRoad
                 return;
             }
 
+            UpdateFrontflip();
+
             float throttle = Input.GetAxisRaw("Vertical");
             float steering = Input.GetAxisRaw("Horizontal");
             bool nitro = Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
@@ -118,17 +135,24 @@ namespace MusicRoad
                 out Vector3 roadTangent,
                 out float lateralDistance);
             onRoad = nearGeneratedRoad && lateralDistance <= RoadGenerator.RoadHalfWidth + 0.35f;
-            if (grounded)
+            if (grounded && !frontflipActive)
             {
                 ApplySuspensionAndAlignment(hit, roadTangent);
             }
 
-            ApplySteering(steering);
+            if (!frontflipActive)
+            {
+                ApplySteering(steering);
+            }
 
             if (grounded)
             {
                 ApplyDrive(throttle, boosting);
-                if (jumpRequested)
+                if (frontflipRequested)
+                {
+                    BeginFrontflip(hit.normal, true);
+                }
+                else if (jumpRequested)
                 {
                     body.AddForce(hit.normal * 14f + transform.forward * 1.2f, ForceMode.VelocityChange);
                 }
@@ -136,10 +160,52 @@ namespace MusicRoad
             else
             {
                 body.AddForce(transform.forward * (throttle * (boosting ? 22f : 9f)), ForceMode.Acceleration);
+                if (frontflipRequested)
+                {
+                    BeginFrontflip(Vector3.up, false);
+                }
             }
 
             jumpRequested = false;
+            frontflipRequested = false;
             wasBoosting = boosting;
+        }
+
+        private void BeginFrontflip(Vector3 launchNormal, bool launch)
+        {
+            frontflipAxis = transform.right.normalized;
+            frontflipDegreesRemaining = 360f;
+            frontflipActive = true;
+            body.angularDamping = 0f;
+            body.angularVelocity = Vector3.ProjectOnPlane(body.angularVelocity, frontflipAxis);
+            if (launch)
+            {
+                Vector3 planarForward = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+                body.AddForce(
+                    launchNormal * 8.8f + planarForward * 2.4f,
+                    ForceMode.VelocityChange);
+            }
+        }
+
+        private void UpdateFrontflip()
+        {
+            if (!frontflipActive)
+            {
+                return;
+            }
+
+            float rotationStep = Mathf.Min(
+                frontflipDegreesRemaining,
+                1080f * Time.fixedDeltaTime);
+            body.angularVelocity = Vector3.ProjectOnPlane(body.angularVelocity, frontflipAxis);
+            body.MoveRotation(
+                Quaternion.AngleAxis(rotationStep, frontflipAxis) * body.rotation);
+            frontflipDegreesRemaining -= rotationStep;
+            if (frontflipDegreesRemaining <= 0.01f)
+            {
+                frontflipActive = false;
+                body.angularDamping = 4f;
+            }
         }
 
         private void ApplySuspensionAndAlignment(RaycastHit hit, Vector3 roadTangent)

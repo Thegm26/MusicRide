@@ -7,15 +7,23 @@ namespace MusicRoad
         private Transform target;
         private MusicWorldController music;
         private ArcadeCarController car;
+        private Rigidbody targetBody;
         private Vector3 velocity;
+        private Vector3 travelForward;
+        private float groundHeight;
+        private float groundHeightVelocity;
 
         public void Initialize(Transform followTarget, MusicWorldController musicController)
         {
             target = followTarget;
             music = musicController;
             car = target.GetComponent<ArcadeCarController>();
-            transform.position = target.position - target.forward * 8.5f + Vector3.up * 5.2f;
-            transform.LookAt(target.position + target.forward * 4f);
+            targetBody = target.GetComponent<Rigidbody>();
+            travelForward = Vector3.ProjectOnPlane(target.forward, Vector3.up).normalized;
+            groundHeight = target.position.y;
+            Vector3 anchor = new Vector3(target.position.x, groundHeight, target.position.z);
+            transform.position = anchor - travelForward * 8.5f + Vector3.up * 5.2f;
+            transform.LookAt(anchor + travelForward * 4f);
         }
 
         private void LateUpdate()
@@ -25,9 +33,40 @@ namespace MusicRoad
                 return;
             }
 
-            Vector3 desired = target.position - target.forward * 8.5f + Vector3.up * 5.2f;
+            bool frontflipping = car != null && car.IsFrontflipping;
+            if (frontflipping && targetBody != null)
+            {
+                Vector3 movement = Vector3.ProjectOnPlane(targetBody.linearVelocity, Vector3.up);
+                if (movement.sqrMagnitude > 1f)
+                {
+                    travelForward = movement.normalized;
+                }
+            }
+            else
+            {
+                Vector3 heading = Vector3.ProjectOnPlane(target.forward, Vector3.up);
+                if (heading.sqrMagnitude > 0.1f)
+                {
+                    travelForward = Vector3.Slerp(
+                        travelForward,
+                        heading.normalized,
+                        Time.deltaTime * 8f);
+                }
+            }
+
+            if (car == null || (car.IsGrounded && !frontflipping))
+            {
+                groundHeight = Mathf.SmoothDamp(
+                    groundHeight,
+                    target.position.y,
+                    ref groundHeightVelocity,
+                    0.14f);
+            }
+
+            Vector3 anchor = new Vector3(target.position.x, groundHeight, target.position.z);
+            Vector3 desired = anchor - travelForward * 8.5f + Vector3.up * 5.2f;
             transform.position = Vector3.SmoothDamp(transform.position, desired, ref velocity, 0.18f);
-            Vector3 focus = target.position + target.forward * 5f + Vector3.up * 0.8f;
+            Vector3 focus = anchor + travelForward * 5f + Vector3.up * 0.8f;
             Quaternion look = Quaternion.LookRotation(focus - transform.position, Vector3.up);
             transform.rotation = Quaternion.Slerp(transform.rotation, look, Time.deltaTime * 7f);
 
@@ -39,17 +78,8 @@ namespace MusicRoad
                     float boostFov = car != null && car.IsBoosting ? 8f : 0f;
                     camera.fieldOfView = Mathf.Lerp(
                         camera.fieldOfView,
-                        60f + music.Immediate.rms * 5f + music.BeatPulse * 13f + boostFov,
-                        Time.deltaTime * 13f);
-                }
-
-                if (music.BeatPulse > 0.01f)
-                {
-                    float hit = music.BeatPulse;
-                    transform.position +=
-                        transform.right * Mathf.Sin(Time.time * 52f) * hit * 0.34f +
-                        transform.up * Mathf.Cos(Time.time * 46f) * hit * 0.2f -
-                        transform.forward * hit * 0.24f;
+                        60f + music.Immediate.rms * 3f + boostFov,
+                        Time.deltaTime * 8f);
                 }
             }
         }

@@ -46,10 +46,7 @@
 
   function normalized(key, value, lowPercentile = .12, highPercentile = .94) {
     const values = frames.map(frame => frame[key]).filter(Number.isFinite);
-    if (values.length < 24) {
-      const observedMax = Math.max(value, ...values, .000001);
-      return clamp(value / (observedMax * 1.2));
-    }
+    if (values.length < 24) return 0;
     const floor = percentile(values, lowPercentile);
     const ceiling = Math.max(floor + .000001, percentile(values, highPercentile));
     return clamp((value - floor) / (ceiling - floor));
@@ -136,6 +133,7 @@
     const midRise = Math.max(0, midBand - (previous?.midBand || midBand));
     const highRise = Math.max(0, highBand - (previous?.highBand || highBand));
     const harmonicMotion = chromaDistance(features.chroma, previous?.chroma);
+    const profileSeconds = frames.length * BUFFER_SIZE / Math.max(1, audioContext.sampleRate);
 
     let energy = 0;
     let onset = 0;
@@ -149,13 +147,17 @@
     let rhythm = { bpm: 0, confidence: 0, density: 0 };
 
     if (audible) {
-      energy = normalized("perceivedLoudness", perceivedLoudness);
+      const decibels = 20 * Math.log10(Math.max(rawRms, .000001));
+      const absoluteEnergy = clamp((decibels + 42) / 30);
+      const contextualEnergy = normalized("perceivedLoudness", perceivedLoudness, .12, .97);
+      const contextWeight = frames.length < 24 ? 0 : clamp((profileSeconds - 1) / 7) * .25;
+      energy = absoluteEnergy * (1 - contextWeight) + contextualEnergy * contextWeight;
       const fluxRise = normalized("flux", flux, .25, .97);
       const volumeAttack = normalized("loudRise", loudRise, .35, .97);
       onset = clamp(fluxRise * .58 + volumeAttack * .42);
       lowImpact = clamp(normalized("lowRise", lowRise, .35, .97) * .7 + onset * .3);
       highImpact = clamp(normalized("highRise", highRise, .35, .97) * .7 + onset * .3);
-      fullness = clamp(features.perceptualSpread || 0);
+      fullness = clamp(((features.perceptualSpread || 0) - .25) / .65);
       const flatness = clamp(features.spectralFlatness || 0);
       const chroma = features.chroma || [];
       const chromaMean = mean(chroma);
@@ -176,18 +178,15 @@
       sectionEnergy *= .98;
     }
 
-    const profileSeconds = frames.length * BUFFER_SIZE / Math.max(1, audioContext.sampleRate);
-    const calibrationConfidence = clamp((profileSeconds - 8) / 52);
+    const calibrationConfidence = clamp(profileSeconds / 8);
     const rawHeavy = clamp(
-      sectionLift * .5 +
-      onset * .2 +
-      vocalLift * .14 +
-      Math.max(lowImpact, highImpact) * .1 +
-      harmonicChange * .06
+      Math.pow(energy, 1.25) * .48 +
+      sectionLift * .22 +
+      rhythm.density * .1 +
+      Math.max(lowImpact, highImpact) * .12 +
+      fullness * .08
     );
-    const heavy = audible
-      ? Math.min(.55 + calibrationConfidence * .45, rawHeavy)
-      : 0;
+    const heavy = audible ? rawHeavy : 0;
 
     latest = {
       clientTime: Date.now(),
@@ -271,7 +270,7 @@
           latest.tonality > .62 ? "Tonal / harmonic"
             : latest.spectralFlatness > .28 ? "Noisy / textured"
             : "Mixed timbre",
-          `Song profile ${Math.round(latest.profileSeconds)} / 60 sec`
+          `DSP context ${Math.min(60, Math.round(latest.profileSeconds))} sec`
         ]
       : ["Waiting for audible music…"];
     for (const value of values) {
@@ -299,9 +298,7 @@
     document.querySelector("#sampleValue").textContent = `${Math.round(latest.profileSeconds)} sec`;
     signalDot.classList.toggle("live", latest.audible);
     statusText.textContent = latest.audible
-      ? latest.profileSeconds < PROFILE_SECONDS
-        ? `Listening • profiling this song (${Math.round(latest.profileSeconds)} / 60 sec)`
-        : "Listening • rolling song profile ready"
+      ? `Listening • DSP active • road ${Math.round(latest.heavy * 100)}%`
       : "Connected • silence is excluded from the profile";
     updateTags();
   }

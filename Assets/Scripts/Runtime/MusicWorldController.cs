@@ -45,7 +45,7 @@ namespace MusicRoad
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogDensity = 0.019f;
+            RenderSettings.fogDensity = 0.03f;
 
             GameObject beatLightObject = new GameObject("Music Beat Flash");
             beatLightObject.transform.SetParent(transform, false);
@@ -111,9 +111,28 @@ namespace MusicRoad
                 camera.backgroundColor = Color.Lerp(camera.backgroundColor, sky, Time.unscaledDeltaTime * 1.8f);
             }
 
+            Material skybox = RenderSettings.skybox;
+            if (skybox != null &&
+                skybox.HasProperty("_SkyTint") &&
+                skybox.HasProperty("_GroundColor"))
+            {
+                Color skyTint = Color.Lerp(new Color(0.18f, 0.36f, 0.62f), sky, 0.72f);
+                Color groundTint = Color.Lerp(new Color(0.11f, 0.17f, 0.16f), sky * 0.48f, section);
+                skybox.SetColor("_SkyTint", Color.Lerp(skybox.GetColor("_SkyTint"), skyTint, Time.unscaledDeltaTime * 0.8f));
+                skybox.SetColor("_GroundColor", Color.Lerp(skybox.GetColor("_GroundColor"), groundTint, Time.unscaledDeltaTime * 0.8f));
+                if (skybox.HasProperty("_AtmosphereThickness"))
+                {
+                    skybox.SetFloat("_AtmosphereThickness", Mathf.Lerp(0.92f, 1.42f, section));
+                }
+                if (skybox.HasProperty("_Exposure"))
+                {
+                    skybox.SetFloat("_Exposure", 0.98f + section * 0.28f + impact * 0.08f);
+                }
+            }
+
             Color fogTarget = Color.Lerp(new Color(0.14f, 0.2f, 0.27f), sky, 0.72f);
             RenderSettings.fogColor = Color.Lerp(RenderSettings.fogColor, fogTarget, Time.unscaledDeltaTime * 1.4f);
-            RenderSettings.fogDensity = Mathf.Lerp(0.022f, 0.015f, section);
+            RenderSettings.fogDensity = Mathf.Lerp(0.034f, 0.024f, section);
             Color ambient = Color.Lerp(new Color(0.42f, 0.46f, 0.5f), new Color(0.72f, 0.78f, 0.84f), section);
             RenderSettings.ambientLight = Color.Lerp(RenderSettings.ambientLight, ambient, Time.unscaledDeltaTime * 2f);
 

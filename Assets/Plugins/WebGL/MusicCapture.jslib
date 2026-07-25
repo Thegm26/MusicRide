@@ -16,7 +16,6 @@ mergeInto(LibraryManager.library, {
     onsetTimes: [],
     sectionEnergy: 0,
     lastBeatTime: 0,
-    profileReadySent: false,
     bufferSize: 2048,
     profileSeconds: 60,
 
@@ -62,11 +61,7 @@ mergeInto(LibraryManager.library, {
         }
       }
       if (values.length < 24) {
-        var observedMax = Math.max(value, 0.000001);
-        for (var index = 0; index < values.length; index++) {
-          observedMax = Math.max(observedMax, values[index]);
-        }
-        return MusicRoadCapture.clamp(value / (observedMax * 1.2));
+        return 0;
       }
       var floor = MusicRoadCapture.percentile(values, lowPercentile);
       var ceiling = Math.max(
@@ -180,7 +175,6 @@ mergeInto(LibraryManager.library, {
       MusicRoadCapture.onsetTimes = [];
       MusicRoadCapture.sectionEnergy = 0;
       MusicRoadCapture.lastBeatTime = 0;
-      MusicRoadCapture.profileReadySent = false;
     },
 
     onFeatures: function (features) {
@@ -194,26 +188,25 @@ mergeInto(LibraryManager.library, {
       if (audible && MusicRoadCapture.resetOnNextSignal) {
         MusicRoadCapture.resetProfile();
         MusicRoadCapture.resetOnNextSignal = false;
-        MusicRoadCapture.sendState(
-          "Active",
-          "LIVE \u2022 NEW SONG DETECTED \u2022 building a fresh 60-second profile."
-        );
       }
       if (audible) {
         MusicRoadCapture.lastAudibleTime = now;
       } else if (
         MusicRoadCapture.lastAudibleTime > 0 &&
-        now - MusicRoadCapture.lastAudibleTime > 4000
+        now - MusicRoadCapture.lastAudibleTime > 6000
       ) {
         MusicRoadCapture.resetOnNextSignal = true;
       }
 
       if (!MusicRoadCapture.signalDetected && audible) {
         MusicRoadCapture.signalDetected = true;
-        MusicRoadCapture.sendState(
-          "Active",
-          "LIVE COMPUTER AUDIO \u2022 analyzing rhythm, timbre, impacts, and sections."
-        );
+        if (MusicRoadCapture.silentWarningSent) {
+          MusicRoadCapture.silentWarningSent = false;
+          MusicRoadCapture.sendState(
+            "Active",
+            "AUDIO CONNECTED \u2022 DSP ACTIVE \u2022 road reacts to music."
+          );
+        }
       } else if (
         !MusicRoadCapture.signalDetected &&
         !MusicRoadCapture.silentWarningSent &&
@@ -247,6 +240,9 @@ mergeInto(LibraryManager.library, {
         features.chroma,
         prior ? prior.chroma : null
       );
+      var profileDuration =
+        (MusicRoadCapture.frames.length * MusicRoadCapture.bufferSize) /
+        Math.max(1, MusicRoadCapture.context.sampleRate);
 
       var energy = 0;
       var onset = 0;
@@ -260,12 +256,21 @@ mergeInto(LibraryManager.library, {
       var rhythm = { bpm: 0, confidence: 0, density: 0, triggered: false };
 
       if (audible) {
-        energy = MusicRoadCapture.normalized(
+        var decibels = 20 * Math.log10(Math.max(rawLevel, 0.000001));
+        var absoluteEnergy = MusicRoadCapture.clamp((decibels + 42) / 30);
+        var contextualEnergy = MusicRoadCapture.normalized(
           "perceivedLoudness",
           perceivedLoudness,
           0.12,
-          0.94
+          0.97
         );
+        var contextWeight =
+          MusicRoadCapture.frames.length < 24
+            ? 0
+            : MusicRoadCapture.clamp((profileDuration - 1) / 7) * 0.25;
+        energy =
+          absoluteEnergy * (1 - contextWeight) +
+          contextualEnergy * contextWeight;
         var fluxRise = MusicRoadCapture.normalized("flux", flux, 0.25, 0.97);
         var volumeAttack = MusicRoadCapture.normalized(
           "loudRise",
@@ -282,7 +287,9 @@ mergeInto(LibraryManager.library, {
           MusicRoadCapture.normalized("highRise", highRise, 0.35, 0.97) * 0.7 +
             onset * 0.3
         );
-        fullness = MusicRoadCapture.clamp(features.perceptualSpread || 0);
+        fullness = MusicRoadCapture.clamp(
+          ((features.perceptualSpread || 0) - 0.25) / 0.65
+        );
         var flatness = MusicRoadCapture.clamp(features.spectralFlatness || 0);
         var chroma = features.chroma || [];
         var chromaMean = MusicRoadCapture.mean(chroma);
@@ -319,22 +326,17 @@ mergeInto(LibraryManager.library, {
         MusicRoadCapture.sectionEnergy *= 0.98;
       }
 
-      var profileDuration =
-        (MusicRoadCapture.frames.length * MusicRoadCapture.bufferSize) /
-        Math.max(1, MusicRoadCapture.context.sampleRate);
       var calibrationConfidence = MusicRoadCapture.clamp(
-        (profileDuration - 8) / 52
+        profileDuration / 8
       );
       var rawHeavy = MusicRoadCapture.clamp(
-        sectionLift * 0.5 +
-          onset * 0.2 +
-          vocalLift * 0.14 +
-          Math.max(lowImpact, highImpact) * 0.1 +
-          harmonicChange * 0.06
+        Math.pow(energy, 1.25) * 0.48 +
+          sectionLift * 0.22 +
+          rhythm.density * 0.1 +
+          Math.max(lowImpact, highImpact) * 0.12 +
+          fullness * 0.08
       );
-      var heavy = audible
-        ? Math.min(0.55 + calibrationConfidence * 0.45, rawHeavy)
-        : 0;
+      var heavy = audible ? rawHeavy : 0;
       var centroidHz =
         ((features.spectralCentroid || 0) *
           MusicRoadCapture.context.sampleRate) /
@@ -369,17 +371,6 @@ mergeInto(LibraryManager.library, {
         amplitudeSpectrum: features.amplitudeSpectrum,
       };
 
-      if (
-        !MusicRoadCapture.profileReadySent &&
-        profileDuration >= MusicRoadCapture.profileSeconds
-      ) {
-        MusicRoadCapture.profileReadySent = true;
-        MusicRoadCapture.sendState(
-          "Active",
-          "LIVE SONG PROFILE READY \u2022 reactions use rolling 60-second statistics."
-        );
-      }
-
       SendMessage(
         "AudioCaptureService",
         "OnAudioFeatures",
@@ -411,7 +402,10 @@ mergeInto(LibraryManager.library, {
           bpm: rhythm.bpm,
           heavy: heavy,
           calibrationConfidence: calibrationConfidence,
-          profileSeconds: profileDuration,
+          profileSeconds: Math.min(
+            profileDuration,
+            MusicRoadCapture.profileSeconds
+          ),
         })
       );
     },
@@ -500,7 +494,7 @@ mergeInto(LibraryManager.library, {
       MusicRoadCapture.silentWarningSent = false;
       MusicRoadCapture.sendState(
         "Active",
-        "COMPUTER AUDIO CONNECTED \u2022 local music analyzer is ready."
+        "AUDIO CONNECTED \u2022 DSP ACTIVE \u2022 road reacts to music."
       );
     },
 

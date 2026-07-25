@@ -22,6 +22,7 @@ namespace MusicRoad
         private float score;
         private int combo = 1;
         private float cleanDrivingTime;
+        private float lastAudibleUiTime = float.NegativeInfinity;
 
         public void Initialize(AudioCaptureService audioCapture, ArcadeCarController playerCar)
         {
@@ -145,9 +146,9 @@ namespace MusicRoad
             labelRect.offsetMax = Vector2.zero;
 
             string controlsValue = car.CanBoost
-                ? "WASD / ARROWS • DRIVE   |   SHIFT • NITRO   |   SPACE • JUMP   |   R • RESET"
-                : "WASD / ARROWS • DRIVE   |   SPACE • JUMP   |   R • RESET";
-            Text controls = CreateText(canvas.transform, font, controlsValue, 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(820f, 45f));
+                ? "WASD / ARROWS • DRIVE   |   SHIFT • NITRO   |   LEFT CLICK • FRONTFLIP   |   SPACE • JUMP   |   R • RESET"
+                : "WASD / ARROWS • DRIVE   |   LEFT CLICK • FRONTFLIP   |   SPACE • JUMP   |   R • RESET";
+            Text controls = CreateText(canvas.transform, font, controlsValue, 18, TextAnchor.UpperRight, new Vector2(-35f, -110f), new Vector2(1120f, 45f));
             RectTransform controlsRect = controls.rectTransform;
             controlsRect.anchorMin = Vector2.one;
             controlsRect.anchorMax = Vector2.one;
@@ -173,7 +174,7 @@ namespace MusicRoad
             panelRect.sizeDelta = new Vector2(310f, 148f);
 
             audioInputText = CreateText(panelObject.transform, font, "SONG WINDOW: NOT CONNECTED", 18, TextAnchor.UpperLeft, new Vector2(14f, -12f), new Vector2(285f, 28f));
-            string[] labels = { "SECTION", "MID LIFT", "HIT" };
+            string[] labels = { "ROAD", "MID", "HIT" };
             Color[] colors =
             {
                 new Color(1f, 0.36f, 0.48f),
@@ -227,9 +228,9 @@ namespace MusicRoad
 
             bool receiving = capture.State == AudioCaptureState.Active &&
                 capture.HasReceivedFeatures &&
-                capture.SecondsSinceLastFeatures < 0.75f;
+                capture.SecondsSinceLastFeatures < 2f;
             AudioFeatureFrame frame = receiving ? capture.LatestFeatures : default;
-            float[] levels = { frame.sectionLift, frame.vocalLift, frame.onset };
+            float[] levels = { frame.heavy, frame.vocalLift, frame.onset };
 
             for (int i = 0; i < audioBars.Length; i++)
             {
@@ -243,7 +244,11 @@ namespace MusicRoad
                 audioBars[i].rectTransform.localScale = scale;
             }
 
-            bool audible = receiving && frame.rawLevel > 0.004f;
+            if (receiving && frame.rawLevel > 0.0035f)
+            {
+                lastAudibleUiTime = Time.unscaledTime;
+            }
+            bool audible = receiving && Time.unscaledTime - lastAudibleUiTime < 2f;
             if (Application.isEditor)
             {
                 audioInputText.text = "SONG WINDOW: EDITOR DEMO";
@@ -251,12 +256,12 @@ namespace MusicRoad
             }
             else if (audible)
             {
-                audioInputText.text = "SONG WINDOW: LIVE • 60 SEC";
+                audioInputText.text = $"DSP ACTIVE • ROAD {Mathf.RoundToInt(frame.heavy * 100f):00}%";
                 audioInputText.color = new Color(0.35f, 1f, 0.65f);
             }
             else if (capture.State == AudioCaptureState.Active)
             {
-                audioInputText.text = receiving ? "SONG WINDOW: CONNECTED • SILENT" : "SONG WINDOW: WAITING";
+                audioInputText.text = "AUDIO CONNECTED • WAITING FOR MUSIC";
                 audioInputText.color = new Color(1f, 0.7f, 0.3f);
             }
             else
